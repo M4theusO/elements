@@ -193,10 +193,60 @@ Dois esquemas de teclado ativos ao mesmo tempo + gamepad (layout Xbox / "standar
 - Reservado para o futuro (não criado): `dash`, troca de personagem, mapa, inventário — Q, R, M e LB/RB/LT/RT livres. **Não usar Tab, Ctrl/Alt+tecla ou F1–F12.**
 - Novas ações exigem aprovação e devem ser adicionadas a esta tabela.
 
+### Collision Layers 2D (aprovado)
+
+Conceito na Godot: **layer = "o que eu sou"**; **mask = "o que eu procuro"**. A detecta B se a *mask de A* contém a *layer de B* (detecção unidirecional). `StaticBody2D`/`TileMapLayer` não precisam de mask. `Area2D` que procura precisa de `monitoring`; a que é encontrada precisa de `monitorable`.
+
+| # | Nome | Responsabilidade | Nó típico |
+|---|---|---|---|
+| 1 | `world` | Chão, paredes, teto | `TileMapLayer` (physics layer do TileSet) |
+| 2 | `platforms` | Plataformas atravessáveis (one-way); separada de `world` para o jogador poder desligá-la da mask ao descer (`move_down`) | `TileMapLayer` / `StaticBody2D` |
+| 3 | `player` | Corpo físico do protagonista ativo | `CharacterBody2D` |
+| 4 | `enemies` | Corpo físico dos inimigos | `CharacterBody2D` |
+| 5 | `player_hurtbox` | Área onde o jogador recebe dano | `Area2D` (Hurtbox) |
+| 6 | `enemy_hurtbox` | Área onde inimigos recebem dano | `Area2D` (Hurtbox) |
+| 7 | `destructibles` | Paredes/objetos quebráveis e sólidos | `StaticBody2D` |
+| 8 | `interactables` | NPCs, alavancas, baús, portas | `Area2D` |
+
+Layers 9–32 livres. **Nenhuma layer nova sem aprovação.**
+
+#### Separação de responsabilidades
+
+- **Corpo físico** (`CharacterBody2D`): só movimento e colisão com o cenário. Não recebe nem causa dano.
+- **Hitbox** (`Area2D`, *causa* dano): **não ocupa layer**; apenas procura (mask) hurtboxes/destrutíveis. É o lado que detecta o acerto. Golpes, habilidades e projéteis são todos hitboxes — projéteis apenas adicionam `world` à mask para sumir ao bater em paredes.
+- **Hurtbox** (`Area2D`, *recebe* dano): ocupa `player_hurtbox` ou `enemy_hurtbox`, sem mask. Formato independente do corpo físico; invencibilidade = desligar `monitorable`.
+- **Sensor de interação** (`Area2D` do jogador): sem layer, mask `interactables`.
+- **Zonas de gatilho** (troca de sala, checkpoint, câmera): sem layer, mask `player`.
+
+Os lados (jogador × inimigo) são definidos pelas layers; o **tipo** de ataque (golpe, projétil, habilidade) não.
+
+#### Matriz de detecção
+
+Linhas = quem procura (mask); colunas = layer do alvo.
+
+| Quem procura ↓ / Alvo → | world | platforms | player | enemies | player_hurtbox | enemy_hurtbox | destructibles | interactables |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| Corpo do jogador | ✅ | ✅ | | | | | ✅ | |
+| Corpo do inimigo | ✅ | ✅ | | | | | ✅ | |
+| Hitbox do jogador | | | | | | ✅ | ✅ | |
+| Projétil do jogador | ✅ | | | | | ✅ | ✅ | |
+| Hitbox do inimigo (golpe, contato) | | | | | ✅ | | | |
+| Projétil do inimigo | ✅ | | | | ✅ | | | |
+| Hitbox ambiental (espinhos, lava) | | | | | ✅ | | | |
+| Sensor de interação | | | | | | | | ✅ |
+| Zonas de gatilho | | | ✅ | | | | | |
+
+#### Regras de design
+
+- **Jogador e inimigos não têm colisão física entre si** (atravessam-se; o contato causa dano via hitbox do inimigo). Inimigos também não colidem entre si.
+- **Os quatro protagonistas compartilham a mesma arquitetura de colisões.** Diferenças elementais ficam nos **dados da hitbox** (dano, elemento, flags como "quebra rocha"), nunca em layers. Ex.: parede que só a habilidade sísmica quebra está em `destructibles` e o componente dela rejeita golpes de outro tipo.
+- **Armadilhas e perigos ambientais são hitboxes ambientais** — conceito próprio, distinto de ataques de inimigos, mas sem layer própria (mask `player_hurtbox`).
+- **Destrutíveis no protótipo são cenas próprias com `StaticBody2D`**, não tiles do `TileMapLayer`.
+- Configurar layers/masks preferencialmente no Inspector das cenas. Constantes de código para layers só serão criadas no primeiro uso real em script, com aprovação.
+
 ### A definir
 
 Itens a serem decididos e registrados aqui quando forem criados — **não criar sem aprovação**:
-- Layers de colisão física (nome e número de cada layer).
 - Autoloads.
 
 ## 10. Validação antes de concluir uma tarefa

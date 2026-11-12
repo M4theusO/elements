@@ -94,6 +94,17 @@ pause={
 ]
 }
 
+[layer_names]
+
+2d_physics/layer_1="world"
+2d_physics/layer_2="platforms"
+2d_physics/layer_3="player"
+2d_physics/layer_4="enemies"
+2d_physics/layer_5="player_hurtbox"
+2d_physics/layer_6="enemy_hurtbox"
+2d_physics/layer_7="destructibles"
+2d_physics/layer_8="interactables"
+
 [physics]
 
 3d/physics_engine="Jolt Physics"
