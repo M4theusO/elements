@@ -1,0 +1,18 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://entities/characters/_shared/player_character.tscn" id="1_base"]
+[ext_resource type="Resource" path="res://entities/characters/terra/terra_stats.tres" id="2_stats"]
+
+[sub_resource type="Gradient" id="Gradient_terra"]
+colors = PackedColorArray(0.36, 0.25, 0.15, 1, 0.55, 0.62, 0.3, 1)
+
+[sub_resource type="GradientTexture2D" id="GradientTexture2D_terra"]
+gradient = SubResource("Gradient_terra")
+width = 16
+height = 32
+
+[node name="Terra" instance=ExtResource("1_base")]
+stats = ExtResource("2_stats")
+
+[node name="Sprite2D" parent="Visuals" index="0"]
+texture = SubResource("GradientTexture2D_terra")

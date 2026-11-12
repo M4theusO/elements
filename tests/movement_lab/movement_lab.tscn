@@ -1,0 +1,129 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://entities/characters/terra/terra.tscn" id="1_bw7t0"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_mat56"]
+size = Vector2(1280, 32)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_i0b42"]
+size = Vector2(16, 432)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_tdjhb"]
+size = Vector2(16, 432)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_bl7bp"]
+size = Vector2(48, 16)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_fh1gx"]
+size = Vector2(48, 32)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_w6a4j"]
+size = Vector2(48, 48)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_buoa2"]
+size = Vector2(48, 64)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_owgnu"]
+size = Vector2(128, 8)
+
+[node name="MovementLab" type="Node2D" unique_id=315509171]
+
+[node name="Level" type="Node2D" parent="." unique_id=1466508493]
+
+[node name="Floor" type="StaticBody2D" parent="Level" unique_id=128045002]
+position = Vector2(640, 336)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/Floor" unique_id=787109015]
+shape = SubResource("RectangleShape2D_mat56")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/Floor" unique_id=452683569]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-640, -16, 640, -16, 640, 16, -640, 16)
+
+[node name="WallLeft" type="StaticBody2D" parent="Level" unique_id=1724400248]
+position = Vector2(-8, 136)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/WallLeft" unique_id=168980639]
+shape = SubResource("RectangleShape2D_i0b42")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/WallLeft" unique_id=1515967405]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-8, -216, 8, -216, 8, 216, -8, 216)
+
+[node name="WallRight" type="StaticBody2D" parent="Level" unique_id=1795785074]
+position = Vector2(1288, 136)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/WallRight" unique_id=448705064]
+shape = SubResource("RectangleShape2D_tdjhb")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/WallRight" unique_id=1326847374]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-8, -216, 8, -216, 8, 216, -8, 216)
+
+[node name="Step1" type="StaticBody2D" parent="Level" unique_id=480386729]
+position = Vector2(424, 312)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/Step1" unique_id=1670175565]
+shape = SubResource("RectangleShape2D_bl7bp")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/Step1" unique_id=1827859600]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-24, -8, 24, -8, 24, 8, -24, 8)
+
+[node name="Step2" type="StaticBody2D" parent="Level" unique_id=1305173492]
+position = Vector2(544, 304)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/Step2" unique_id=576485767]
+shape = SubResource("RectangleShape2D_fh1gx")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/Step2" unique_id=1629104663]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-24, -16, 24, -16, 24, 16, -24, 16)
+
+[node name="Step3" type="StaticBody2D" parent="Level" unique_id=1463584373]
+position = Vector2(664, 296)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/Step3" unique_id=1471019102]
+shape = SubResource("RectangleShape2D_w6a4j")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/Step3" unique_id=320716827]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-24, -24, 24, -24, 24, 24, -24, 24)
+
+[node name="Step4" type="StaticBody2D" parent="Level" unique_id=1472527590]
+position = Vector2(784, 288)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/Step4" unique_id=1107785593]
+shape = SubResource("RectangleShape2D_buoa2")
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/Step4" unique_id=1375796694]
+color = Color(0.22, 0.22, 0.26, 1)
+polygon = PackedVector2Array(-24, -32, 24, -32, 24, 32, -24, 32)
+
+[node name="OneWayPlatform" type="StaticBody2D" parent="Level" unique_id=936520338]
+position = Vector2(1024, 276)
+collision_layer = 2
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Level/OneWayPlatform" unique_id=1973718068]
+shape = SubResource("RectangleShape2D_owgnu")
+one_way_collision = true
+
+[node name="Polygon2D" type="Polygon2D" parent="Level/OneWayPlatform" unique_id=1487677678]
+color = Color(0.55, 0.45, 0.3, 1)
+polygon = PackedVector2Array(-64, -4, 64, -4, 64, 4, -64, 4)
+
+[node name="Terra" parent="." instance=ExtResource("1_bw7t0")]
+position = Vector2(160, 320)
+
+[node name="Camera2D" type="Camera2D" parent="Terra" unique_id=926469057]
+limit_left = -16
+limit_right = 1296
+limit_bottom = 352
