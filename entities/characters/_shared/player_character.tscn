@@ -3,18 +3,10 @@
 [ext_resource type="Script" path="res://entities/characters/_shared/player_character.gd" id="1_vg3cj"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2kwms"]
-size = Vector2(12, 28)
-
-[sub_resource type="Gradient" id="Gradient_d2e2l"]
-colors = PackedColorArray(0.35, 0.35, 0.35, 1, 0.75, 0.75, 0.75, 1)
-
-[sub_resource type="GradientTexture2D" id="GradientTexture2D_qtpps"]
-gradient = SubResource("Gradient_d2e2l")
-width = 16
-height = 32
+size = Vector2(16, 46)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_xf0nf"]
-size = Vector2(10, 26)
+size = Vector2(14, 44)
 
 [node name="PlayerCharacter" type="CharacterBody2D" unique_id=605991281]
 collision_layer = 4
@@ -22,14 +14,12 @@ collision_mask = 67
 script = ExtResource("1_vg3cj")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=304354530]
-position = Vector2(0, -14)
+position = Vector2(0, -23)
 shape = SubResource("RectangleShape2D_2kwms")
 
 [node name="Visuals" type="Node2D" parent="." unique_id=1779664829]
 
-[node name="Sprite2D" type="Sprite2D" parent="Visuals" unique_id=390068406]
-position = Vector2(0, -16)
-texture = SubResource("GradientTexture2D_qtpps")
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Visuals"]
 
 [node name="Hurtbox" type="Area2D" parent="." unique_id=833843384]
 collision_layer = 16
@@ -37,5 +27,5 @@ collision_mask = 0
 monitoring = false
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=31073735]
-position = Vector2(0, -14)
+position = Vector2(0, -22)
 shape = SubResource("RectangleShape2D_xf0nf")
