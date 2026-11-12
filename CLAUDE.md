@@ -167,14 +167,35 @@ Já definido (em `project.godot`):
 - Renderizador: **Compatibility** (`gl_compatibility`).
 - Resolução interna (viewport): **640x360** — toda a arte e o level design são feitos nessa escala.
 - Resolução de exibição inicial: **1280x720** (`window_width/height_override`), escala 2x.
-- Stretch: mode `viewport`, aspect `keep`, scale mode `integer` — o jogo é renderizado em 640x360 e ampliado apenas por múltiplos inteiros; sobra de tela vira barras pretas.
+- Stretch: mode `viewport`, aspect `keep`, scale mode `integer` — o jogo é renderizado em 640x360 e ampliado apenas por múltiplos inteiros; sobra de tela vira barras pretas. (`keep` é o valor padrão da Godot, por isso não aparece escrito no `project.godot`.)
 - Filtro de textura padrão: **Nearest**.
 
 Notas Web: no navegador, o tamanho do canvas é definido pela página/iframe (o override de janela não se aplica). No itch.io, configurar o embed em 1280x720 para escala 2x exata. A política de redimensionamento do canvas (`Canvas Resize Policy`) será definida ao criar o preset de exportação Web.
 
-Itens a serem decididos e registrados aqui quando forem criados — **não criar sem aprovação**:
+### Input Map (aprovado)
 
-- Input Map (nomes das ações), respeitando as restrições de teclado do navegador (seção 2.1).
+Dois esquemas de teclado ativos ao mesmo tempo + gamepad (layout Xbox / "standard" do navegador). Mouse não é usado no gameplay. Teclas em **physical keycode** (independe do layout do teclado). Todos os eventos com `device = -1` (qualquer dispositivo). Deadzone **0.25** em todas as ações.
+
+| Ação | Esquema A | Esquema B | Gamepad |
+|---|---|---|---|
+| `move_left` | A | ← | Analógico esq. ← / D-pad ← |
+| `move_right` | D | → | Analógico esq. → / D-pad → |
+| `move_up` | W | ↑ | Analógico esq. ↑ / D-pad ↑ |
+| `move_down` | S | ↓ | Analógico esq. ↓ / D-pad ↓ |
+| `jump` | K, Espaço | Z | A (inferior) |
+| `attack` | J | X | X (esquerdo) |
+| `ability` | L | C | Y (superior) |
+| `interact` | E | ↑ (compartilhado com `move_up`) | B (direito) |
+| `pause` | Esc, P | Esc, P | Start |
+
+- `pause` também em P porque, em tela cheia no navegador, Esc sai da tela cheia e não chega ao jogo.
+- Ações `ui_*` mantidas no padrão da Godot por enquanto.
+- Reservado para o futuro (não criado): `dash`, troca de personagem, mapa, inventário — Q, R, M e LB/RB/LT/RT livres. **Não usar Tab, Ctrl/Alt+tecla ou F1–F12.**
+- Novas ações exigem aprovação e devem ser adicionadas a esta tabela.
+
+### A definir
+
+Itens a serem decididos e registrados aqui quando forem criados — **não criar sem aprovação**:
 - Layers de colisão física (nome e número de cada layer).
 - Autoloads.
 
