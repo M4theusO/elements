@@ -51,10 +51,25 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 
 ## 3. Estado atual do projeto
 
-- Projeto **em fase inicial**: até o momento existe apenas este CLAUDE.md.
-- Existem apenas: `project.godot` configurado (seção 9), a estrutura de pastas vazia (seção 7, com `.gitkeep`) e o repositório Git local.
-- Nenhuma cena, script, asset, autoload ou sistema foi criado ainda.
-- **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
+Última atualização: 2026-11-12. Repositório: https://github.com/M4theusO/elements (privado, branch `master`).
+
+**Concluído:**
+- Fundação: `project.godot` (seção 9), estrutura de pastas (seção 7), Input Map e Collision Layers.
+- **Marco 1, etapas 1–2 (movimentação e pulo da Terra):**
+  - `core/resources/character_stats.gd` (`CharacterStats`) e `entities/characters/_shared/player_character.{tscn,gd}` (`PlayerCharacter`): aceleração/desaceleração (sensível ao analógico), gravidade com queda mais forte, pulo variável, coyote time, jump buffer, velocidade máxima de queda, troca automática de animação.
+  - `entities/characters/terra/terra.tscn` (herdada) + `terra_stats.tres` + `terra_sprite_frames.tres`.
+  - Colisão do corpo 16x46 em (0,-23); Hurtbox 14x44 em (0,-22). Altura mínima de passagem no level design: 3 tiles (48 px).
+  - Animações da Terra: `idle` (arte original, 4 quadros), `walk`, `jump` e `fall` (**placeholders** gerados a partir do idle; ver seção 7, "Animações dos protagonistas").
+  - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera), **cena principal temporária**.
+- Validação automatizada (82 verificações: estrutura, animações, movimento) existe apenas como script fora do repositório; não está versionada.
+
+**Pendente / próximos passos possíveis:**
+- Arte final de `walk`, `jump` e `fall` (substituir os PNGs mantendo nome e formato).
+- Opcional: balanço da trança no `walk`.
+- Teste visual no editor (F5) e na exportação Web; export templates 4.7.2 ainda **não instalados**, preset Web ainda não criado.
+- Marco 1, próximas etapas: combate básico, inimigos, habilidade sísmica, cenário destrutível, progressão.
+
+**Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
 > Atualize esta seção conforme marcos forem concluídos.
 
@@ -144,6 +159,15 @@ Regras:
 - Assets usados por uma única entidade ficam na pasta dela (ex.: `entities/characters/terra/sprites/`); `assets/` é só para o que é compartilhado.
 - Pastas vazias levam um `.gitkeep`, que pode ser removido quando a pasta receber conteúdo.
 - Novas pastas de primeiro nível exigem aprovação.
+
+### Animações dos protagonistas
+
+- Cada protagonista define suas animações num `SpriteFrames` próprio (`entities/characters/<nome>/<nome>_sprite_frames.tres`), usado pelo `Visuals/AnimatedSprite2D` da cena herdada. A cena base não tem `SpriteFrames`.
+- **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`. Novos nomes só com aprovação.
+- `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com velocidade horizontal e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
+- `jump` não tem loop (para no último quadro); `idle`, `walk` e `fall` têm loop.
+- Spritesheets: quadros de 48x64, fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
+- `terra_walk.png`, `terra_jump.png` e `terra_fall.png` atuais são **placeholders** gerados a partir do idle; a arte final substitui os arquivos mantendo nome e formato (8, 2 e 2 quadros).
 
 ## 8. Convenções de código (GDScript)
 

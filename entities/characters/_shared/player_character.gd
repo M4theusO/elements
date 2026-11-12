@@ -3,6 +3,14 @@ extends CharacterBody2D
 ## Base compartilhada pelos protagonistas: movimento horizontal, gravidade e pulo.
 ## Todos os parâmetros vêm de um CharacterStats; cada personagem fornece o seu.
 
+## Nomes de animação padronizados para todos os protagonistas (definidos no SpriteFrames de cada um).
+const ANIM_IDLE: StringName = &"idle"
+const ANIM_WALK: StringName = &"walk"
+const ANIM_JUMP: StringName = &"jump"
+const ANIM_FALL: StringName = &"fall"
+## Velocidade horizontal mínima (px/s) para considerar que o personagem está andando.
+const WALK_SPEED_THRESHOLD: float = 1.0
+
 @export var stats: CharacterStats
 
 var _coyote_timer: float = 0.0
@@ -11,6 +19,7 @@ var _jump_buffer_timer: float = 0.0
 var _is_jump_rising: bool = false
 
 @onready var _visuals: Node2D = $Visuals
+@onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
 
 
 func _ready() -> void:
@@ -28,6 +37,7 @@ func _physics_process(delta: float) -> void:
 	_apply_horizontal_movement(direction, delta)
 	move_and_slide()
 	_update_facing(direction)
+	_update_animation()
 
 
 ## Velocidade inicial do pulo (px/s, positiva) derivada da altura e do tempo até o topo.
@@ -113,3 +123,33 @@ func _update_facing(direction: float) -> void:
 	# Mantém o lado atual quando não há input horizontal.
 	if direction != 0.0:
 		_visuals.scale.x = signf(direction)
+
+
+func _update_animation() -> void:
+	# No ar: jump subindo, fall descendo. No chão: walk em movimento, idle parado.
+	# velocity reflete as colisões do move_and_slide(): empurrar uma parede resulta em idle.
+	var animation_name: StringName
+	if not is_on_floor():
+		animation_name = ANIM_JUMP if velocity.y < 0.0 else ANIM_FALL
+	elif absf(velocity.x) > WALK_SPEED_THRESHOLD:
+		animation_name = ANIM_WALK
+	else:
+		animation_name = ANIM_IDLE
+	_play_animation(animation_name)
+
+
+func _play_animation(animation_name: StringName) -> void:
+	var frames: SpriteFrames = _sprite.sprite_frames
+	if frames == null:
+		return
+	# Animação ausente no SpriteFrames do personagem: usa idle como alternativa.
+	if not frames.has_animation(animation_name):
+		if not frames.has_animation(ANIM_IDLE):
+			return
+		animation_name = ANIM_IDLE
+	if _sprite.animation == animation_name:
+		# Já é a animação atual. Só retoma se for em loop e estiver parada;
+		# animações sem loop (ex.: jump) permanecem no último quadro.
+		if _sprite.is_playing() or not frames.get_animation_loop(animation_name):
+			return
+	_sprite.play(animation_name)
