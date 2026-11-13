@@ -1,13 +1,15 @@
 class_name PlayerCharacter
 extends CharacterBody2D
-## Base compartilhada pelos protagonistas: movimento horizontal, gravidade e pulo.
+## Base compartilhada pelos protagonistas: movimento horizontal, gravidade, pulo e ataque básico.
 ## Todos os parâmetros vêm de um CharacterStats; cada personagem fornece o seu.
+## O golpe (dados e alcance) é configurado na cena de cada personagem, em MeleeAttack e Visuals/Hitbox.
 
 ## Nomes de animação padronizados para todos os protagonistas (definidos no SpriteFrames de cada um).
 const ANIM_IDLE: StringName = &"idle"
 const ANIM_WALK: StringName = &"walk"
 const ANIM_JUMP: StringName = &"jump"
 const ANIM_FALL: StringName = &"fall"
+const ANIM_ATTACK: StringName = &"attack"
 ## Velocidade horizontal mínima (px/s) para considerar que o personagem está andando.
 const WALK_SPEED_THRESHOLD: float = 1.0
 
@@ -20,6 +22,7 @@ var _is_jump_rising: bool = false
 
 @onready var _visuals: Node2D = $Visuals
 @onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
+@onready var _melee_attack: MeleeAttack = $MeleeAttack
 
 
 func _ready() -> void:
@@ -37,6 +40,9 @@ func _physics_process(delta: float) -> void:
 	_apply_horizontal_movement(direction, delta)
 	move_and_slide()
 	_update_facing(direction)
+	# Depois do facing: atacar e virar no mesmo tick golpeia para o novo lado.
+	if Input.is_action_just_pressed("attack"):
+		_melee_attack.try_attack()
 	_update_animation()
 
 
@@ -120,12 +126,19 @@ func _apply_horizontal_movement(direction: float, delta: float) -> void:
 
 
 func _update_facing(direction: float) -> void:
-	# Mantém o lado atual quando não há input horizontal.
-	if direction != 0.0:
+	# Mantém o lado atual quando não há input horizontal e durante o golpe
+	# (preparação e fase ativa), para a Hitbox não virar no meio dele.
+	if direction != 0.0 and not _melee_attack.is_striking():
 		_visuals.scale.x = signf(direction)
 
 
 func _update_animation() -> void:
+	# Prioridade: attack durante preparação e fase ativa (se existir no SpriteFrames;
+	# senão, segue a animação normal). Na recuperação, volta à animação do estado físico.
+	if _melee_attack.is_striking() and _sprite.sprite_frames != null \
+			and _sprite.sprite_frames.has_animation(ANIM_ATTACK):
+		_play_animation(ANIM_ATTACK)
+		return
 	# No ar: jump subindo, fall descendo. No chão: walk em movimento, idle parado.
 	# Walk usa o deslocamento real do move_and_slide(): empurrar uma parede resulta em idle,
 	# inclusive no tick do pouso, em que velocity.x pode sobrar sem movimento efetivo.

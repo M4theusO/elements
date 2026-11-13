@@ -1,12 +1,17 @@
 [gd_scene format=3]
 
 [ext_resource type="Script" path="res://entities/characters/_shared/player_character.gd" id="1_vg3cj"]
+[ext_resource type="Script" path="res://core/components/hitbox.gd" id="2_hitbox"]
+[ext_resource type="Script" path="res://core/components/melee_attack.gd" id="3_melee"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2kwms"]
 size = Vector2(16, 46)
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_xf0nf"]
 size = Vector2(14, 44)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hitbox"]
+size = Vector2(20, 16)
 
 [node name="PlayerCharacter" type="CharacterBody2D" unique_id=605991281]
 collision_layer = 4
@@ -21,6 +26,17 @@ shape = SubResource("RectangleShape2D_2kwms")
 
 [node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Visuals"]
 
+[node name="Hitbox" type="Area2D" parent="Visuals"]
+collision_layer = 0
+collision_mask = 32
+monitoring = false
+monitorable = false
+script = ExtResource("2_hitbox")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Visuals/Hitbox"]
+position = Vector2(18, -28)
+shape = SubResource("RectangleShape2D_hitbox")
+
 [node name="Hurtbox" type="Area2D" parent="." unique_id=833843384]
 collision_layer = 16
 collision_mask = 0
@@ -29,3 +45,7 @@ monitoring = false
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=31073735]
 position = Vector2(0, -22)
 shape = SubResource("RectangleShape2D_xf0nf")
+
+[node name="MeleeAttack" type="Node" parent="." node_paths=PackedStringArray("hitbox")]
+script = ExtResource("3_melee")
+hitbox = NodePath("../Visuals/Hitbox")

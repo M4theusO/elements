@@ -1,6 +1,7 @@
 [gd_scene format=3]
 
 [ext_resource type="PackedScene" path="res://entities/characters/terra/terra.tscn" id="1_bw7t0"]
+[ext_resource type="PackedScene" path="res://entities/enemies/training_dummy/training_dummy.tscn" id="2_dummy"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_mat56"]
 size = Vector2(1280, 32)
@@ -119,6 +120,12 @@ one_way_collision = true
 [node name="Polygon2D" type="Polygon2D" parent="Level/OneWayPlatform" unique_id=1487677678]
 color = Color(0.55, 0.45, 0.3, 1)
 polygon = PackedVector2Array(-64, -4, 64, -4, 64, 4, -64, 4)
+
+[node name="TrainingDummyA" parent="." instance=ExtResource("2_dummy")]
+position = Vector2(260, 320)
+
+[node name="TrainingDummyB" parent="." instance=ExtResource("2_dummy")]
+position = Vector2(880, 320)
 
 [node name="Terra" parent="." instance=ExtResource("1_bw7t0")]
 position = Vector2(160, 320)

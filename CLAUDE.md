@@ -60,14 +60,20 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `entities/characters/terra/terra.tscn` (herdada) + `terra_stats.tres` + `terra_sprite_frames.tres`.
   - Colisão do corpo 16x46 em (0,-23); Hurtbox 14x44 em (0,-22). Altura mínima de passagem no level design: 3 tiles (48 px).
   - Animações da Terra: `idle` (arte original, 4 quadros), `walk`, `jump` e `fall` (**placeholders** gerados a partir do idle; ver seção 7, "Animações dos protagonistas").
-  - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera), **cena principal temporária**.
+  - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera, 2 `TrainingDummy` em x 260 e 880), **cena principal temporária**.
+- **Marco 1, etapa 3 (combate básico da Terra) — implementado, aguardando teste manual e commit:**
+  - Componentes em `core/components/`: `HealthComponent`, `Hurtbox`, `Hitbox`, `MeleeAttack`; dados em `core/resources/attack_data.gd` (`AttackData`). Ver seção 9, "Combate".
+  - Terra: `terra_basic_attack.tres` (dano 1; 0,08 / 0,10 / 0,22 s), Hitbox 20x16 em (18,-28), acionada por `attack`.
+  - Inimigo de teste `entities/enemies/training_dummy/` (3 de vida, `Polygon2D` provisório, pisca e some ao morrer).
+  - `tests/combat/combat_test.gd`: teste automatizado (64 verificações). Executar: `godot --headless --path . -s res://tests/combat/combat_test.gd`.
 - `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 
 **Pendente / próximos passos possíveis:**
 - Arte final de `walk`, `jump` e `fall` (substituir os PNGs mantendo nome e formato).
 - Opcional: balanço da trança no `walk`.
 - Teste visual no editor (F5) e na exportação Web; export templates 4.7.2 ainda **não instalados**, preset Web ainda não criado.
-- Marco 1, próximas etapas: combate básico, inimigos, habilidade sísmica, cenário destrutível, progressão.
+- Arte da animação `attack` da Terra (golpe com a manopla).
+- Marco 1, próximas etapas: inimigos, habilidade sísmica, cenário destrutível, progressão.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -163,7 +169,8 @@ Regras:
 ### Animações dos protagonistas
 
 - Cada protagonista define suas animações num `SpriteFrames` próprio (`entities/characters/<nome>/<nome>_sprite_frames.tres`), usado pelo `Visuals/AnimatedSprite2D` da cena herdada. A cena base não tem `SpriteFrames`.
-- **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`. Novos nomes só com aprovação.
+- **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`, `attack`. Novos nomes só com aprovação.
+- `attack` tem prioridade durante a preparação e a fase ativa do golpe; na recuperação volta à animação do estado físico. Se o `SpriteFrames` não tiver `attack`, a animação normal é mantida (sem cair para `idle`). Sem loop.
 - `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com deslocamento horizontal real (`get_real_velocity()`, para que empurrar uma parede resulte em `idle`) e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
 - `jump` não tem loop (para no último quadro); `idle`, `walk` e `fall` têm loop.
 - Spritesheets: quadros de 48x64, fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
@@ -267,6 +274,15 @@ Linhas = quem procura (mask); colunas = layer do alvo.
 - **Armadilhas e perigos ambientais são hitboxes ambientais** — conceito próprio, distinto de ataques de inimigos, mas sem layer própria (mask `player_hurtbox`).
 - **Destrutíveis no protótipo são cenas próprias com `StaticBody2D`**, não tiles do `TileMapLayer`.
 - Configurar layers/masks preferencialmente no Inspector das cenas. Constantes de código para layers só serão criadas no primeiro uso real em script, com aprovação.
+
+### Combate
+
+- **`HealthComponent`** (`Node`): `max_health`/`current_health` inteiros, `take_damage(amount)`; signals `damaged(amount)` e `died` (uma única vez). Vida nunca negativa; dano zero/negativo ou após a morte é ignorado.
+- **`Hurtbox`** (`Area2D`): `receive_hit(damage)` emite `hit_received` e repassa ao `HealthComponent` exportado (`health`).
+- **`Hitbox`** (`Area2D`): sem layer; mask do alvo (jogador: `enemy_hurtbox`; `destructibles` entra na etapa de cenário destrutível). `activate()`/`deactivate()` alteram `monitoring` com `set_deferred`. Enquanto ativa, consulta as sobreposições a cada tick; cada `Hurtbox` é atingida no máximo uma vez por ativação (vários alvos por golpe são permitidos). `show_debug` desenha o alcance (provisório: translúcido na preparação, forte na fase ativa).
+- **`MeleeAttack`** (`Node`): fases `READY → WINDUP → ACTIVE → RECOVERY` contadas em `_physics_process` a partir de um `AttackData`; `try_attack()`, `is_striking()` (preparação ou ativa), `is_busy()`; signals `attack_started`/`attack_finished`. Roda com `process_physics_priority = -1` para o personagem ler o estado do tick atual.
+- **`PlayerCharacter`**: a ação `attack` chama `try_attack()`; o lado fica travado enquanto `is_striking()`; movimento e física não mudam durante o golpe. A `Hitbox` fica em `Visuals`, então acompanha o flip.
+- Cada personagem configura na própria cena o `AttackData` (`MeleeAttack.attack`) e o formato/posição de `Visuals/Hitbox/CollisionShape2D`.
 
 ### A definir
 
