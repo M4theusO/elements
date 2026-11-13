@@ -4,12 +4,14 @@
 [ext_resource type="Resource" path="res://entities/characters/terra/terra_stats.tres" id="2_stats"]
 [ext_resource type="SpriteFrames" path="res://entities/characters/terra/terra_sprite_frames.tres" id="3_frames"]
 [ext_resource type="Resource" path="res://entities/characters/terra/terra_basic_attack.tres" id="4_attack"]
+[ext_resource type="Script" path="res://entities/characters/terra/abilities/seismic_fist.gd" id="5_seismic"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_terra_hitbox"]
 size = Vector2(20, 16)
 
-[node name="Terra" instance=ExtResource("1_base")]
+[node name="Terra" node_paths=PackedStringArray("ability") instance=ExtResource("1_base")]
 stats = ExtResource("2_stats")
+ability = NodePath("SeismicFist")
 
 [node name="AnimatedSprite2D" parent="Visuals" index="0"]
 sprite_frames = ExtResource("3_frames")
@@ -24,3 +26,6 @@ shape = SubResource("RectangleShape2D_terra_hitbox")
 
 [node name="MeleeAttack" parent="." index="4"]
 attack = ExtResource("4_attack")
+
+[node name="SeismicFist" type="Node" parent="."]
+script = ExtResource("5_seismic")

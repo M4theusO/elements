@@ -10,10 +10,13 @@ const ANIM_WALK: StringName = &"walk"
 const ANIM_JUMP: StringName = &"jump"
 const ANIM_FALL: StringName = &"fall"
 const ANIM_ATTACK: StringName = &"attack"
+const ANIM_ABILITY: StringName = &"ability"
 ## Velocidade horizontal mínima (px/s) para considerar que o personagem está andando.
 const WALK_SPEED_THRESHOLD: float = 1.0
 
 @export var stats: CharacterStats
+## Habilidade especial do personagem (ação "ability"). Vazia na cena base.
+@export var ability: CharacterAbility
 
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
@@ -41,8 +44,11 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 	_update_facing(direction)
 	# Depois do facing: atacar e virar no mesmo tick golpeia para o novo lado.
-	if Input.is_action_just_pressed("attack"):
+	# Golpe básico e preparação da habilidade não se sobrepõem.
+	if Input.is_action_just_pressed("attack") and not _is_ability_casting():
 		_melee_attack.try_attack()
+	if Input.is_action_just_pressed("ability") and ability != null and not _melee_attack.is_striking():
+		ability.try_activate()
 	_update_animation()
 
 
@@ -55,6 +61,15 @@ func get_jump_velocity() -> float:
 func get_jump_gravity() -> float:
 	var time_to_apex: float = _get_time_to_apex()
 	return 2.0 * stats.jump_height / (time_to_apex * time_to_apex)
+
+
+## Lado para onde o personagem olha: 1.0 (direita) ou -1.0 (esquerda).
+func get_facing() -> float:
+	return _visuals.scale.x
+
+
+func _is_ability_casting() -> bool:
+	return ability != null and ability.is_casting()
 
 
 ## jump_time_to_apex limitado ao mínimo do Inspector, mesmo se atribuído por código
@@ -126,9 +141,9 @@ func _apply_horizontal_movement(direction: float, delta: float) -> void:
 
 
 func _update_facing(direction: float) -> void:
-	# Mantém o lado atual quando não há input horizontal e durante o golpe
-	# (preparação e fase ativa), para a Hitbox não virar no meio dele.
-	if direction != 0.0 and not _melee_attack.is_striking():
+	# Mantém o lado atual quando não há input horizontal, durante o golpe
+	# (preparação e fase ativa) e durante a preparação da habilidade.
+	if direction != 0.0 and not _melee_attack.is_striking() and not _is_ability_casting():
 		_visuals.scale.x = signf(direction)
 
 
@@ -138,6 +153,11 @@ func _update_animation() -> void:
 	if _melee_attack.is_striking() and _sprite.sprite_frames != null \
 			and _sprite.sprite_frames.has_animation(ANIM_ATTACK):
 		_play_animation(ANIM_ATTACK)
+		return
+	# Mesma regra para a habilidade, durante a preparação.
+	if _is_ability_casting() and _sprite.sprite_frames != null \
+			and _sprite.sprite_frames.has_animation(ANIM_ABILITY):
+		_play_animation(ANIM_ABILITY)
 		return
 	# No ar: jump subindo, fall descendo. No chão: walk em movimento, idle parado.
 	# Walk usa o deslocamento real do move_and_slide(): empurrar uma parede resulta em idle,

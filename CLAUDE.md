@@ -61,19 +61,23 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - Colisão do corpo 16x46 em (0,-23); Hurtbox 14x44 em (0,-22). Altura mínima de passagem no level design: 3 tiles (48 px).
   - Animações da Terra: `idle` (arte original, 4 quadros), `walk`, `jump` e `fall` (**placeholders** gerados a partir do idle; ver seção 7, "Animações dos protagonistas").
   - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera, 2 `TrainingDummy` em x 260 e 880), **cena principal temporária**.
-- **Marco 1, etapa 3 (combate básico da Terra) — implementado, aguardando teste manual e commit:**
+- **Marco 1, etapa 3 (combate básico da Terra) — validado manualmente e commitado (`16f4532`):**
   - Componentes em `core/components/`: `HealthComponent`, `Hurtbox`, `Hitbox`, `MeleeAttack`; dados em `core/resources/attack_data.gd` (`AttackData`). Ver seção 9, "Combate".
   - Terra: `terra_basic_attack.tres` (dano 1; 0,08 / 0,10 / 0,22 s), Hitbox 20x16 em (18,-28), acionada por `attack`.
   - Inimigo de teste `entities/enemies/training_dummy/` (3 de vida, `Polygon2D` provisório, pisca e some ao morrer).
   - `tests/combat/combat_test.gd`: teste automatizado (64 verificações). Executar: `godot --headless --path . -s res://tests/combat/combat_test.gd`.
+- **Marco 1, etapa 5 (Punho Sísmico da Terra) — validado manualmente e commitado:**
+  - `core/components/character_ability.gd` (`CharacterAbility`): interface mínima da habilidade (ação `ability`).
+  - `entities/characters/terra/abilities/seismic_fist.gd` (`SeismicFist`) + `seismic_wave.{tscn,gd}` (`SeismicWave`, subclasse de `Hitbox`). Ver seção 9, "Combate".
+  - `tests/combat/seismic_fist_test.gd`: teste automatizado (72 verificações). Executar: `godot --headless --path . -s res://tests/combat/seismic_fist_test.gd`.
 - `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 
 **Pendente / próximos passos possíveis:**
 - Arte final de `walk`, `jump` e `fall` (substituir os PNGs mantendo nome e formato).
 - Opcional: balanço da trança no `walk`.
 - Teste visual no editor (F5) e na exportação Web; export templates 4.7.2 ainda **não instalados**, preset Web ainda não criado.
-- Arte da animação `attack` da Terra (golpe com a manopla).
-- Marco 1, próximas etapas: inimigos, habilidade sísmica, cenário destrutível, progressão.
+- Arte das animações `attack` (golpe com a manopla) e `ability` (golpe no chão) da Terra.
+- Marco 1, próximas etapas: inimigos, cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -169,8 +173,9 @@ Regras:
 ### Animações dos protagonistas
 
 - Cada protagonista define suas animações num `SpriteFrames` próprio (`entities/characters/<nome>/<nome>_sprite_frames.tres`), usado pelo `Visuals/AnimatedSprite2D` da cena herdada. A cena base não tem `SpriteFrames`.
-- **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`, `attack`. Novos nomes só com aprovação.
+- **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`, `attack`, `ability`. Novos nomes só com aprovação.
 - `attack` tem prioridade durante a preparação e a fase ativa do golpe; na recuperação volta à animação do estado físico. Se o `SpriteFrames` não tiver `attack`, a animação normal é mantida (sem cair para `idle`). Sem loop.
+- `ability` segue a mesma regra, durante a preparação da habilidade especial.
 - `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com deslocamento horizontal real (`get_real_velocity()`, para que empurrar uma parede resulte em `idle`) e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
 - `jump` não tem loop (para no último quadro); `idle`, `walk` e `fall` têm loop.
 - Spritesheets: quadros de 48x64, fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
@@ -283,6 +288,13 @@ Linhas = quem procura (mask); colunas = layer do alvo.
 - **`MeleeAttack`** (`Node`): fases `READY → WINDUP → ACTIVE → RECOVERY` contadas em `_physics_process` a partir de um `AttackData`; `try_attack()`, `is_striking()` (preparação ou ativa), `is_busy()`; signals `attack_started`/`attack_finished`. Roda com `process_physics_priority = -1` para o personagem ler o estado do tick atual.
 - **`PlayerCharacter`**: a ação `attack` chama `try_attack()`; o lado fica travado enquanto `is_striking()`; movimento e física não mudam durante o golpe. A `Hitbox` fica em `Visuals`, então acompanha o flip.
 - Cada personagem configura na própria cena o `AttackData` (`MeleeAttack.attack`) e o formato/posição de `Visuals/Hitbox/CollisionShape2D`.
+
+#### Habilidades especiais
+
+- **`CharacterAbility`** (`Node`, `core/components/`): interface mínima — `try_activate() -> bool` e `is_casting() -> bool` (preparação). Não há sistema genérico de habilidades; ele só será criado quando houver uma segunda habilidade real.
+- **`PlayerCharacter`**: `@export var ability: CharacterAbility` (vazio na cena base). A ação `ability` chama `try_activate()`, exceto durante o golpe básico (`is_striking()`); o golpe básico é ignorado enquanto `is_casting()`; a direção fica travada durante a preparação. `get_facing()` expõe o lado (1/-1).
+- Habilidades concretas ficam em `entities/characters/<nome>/abilities/`, como nó filho na cena do personagem, e rodam com `process_physics_priority = -1`.
+- **Punho Sísmico da Terra** (`SeismicFist`, valores em `@export` no nó da `terra.tscn`): só no chão; preparação 0,25 s (direção travada, movimento livre, aviso translúcido da onda); sair do chão na preparação cancela sem onda, dano ou recarga. A `SeismicWave` (`Hitbox` com `top_level`, filha da Terra, mask `enemy_hurtbox`) nasce 12 px à frente e percorre 96 px a 240 px/s, dano 2 (uma vez por alvo). A cada tick verifica a posição futura com raycasts: parede (`wall_mask` = world) e chão sob o novo centro (`ground_mask` = world + platforms; plataformas one-way contam como chão e não como parede); some em paredes, bordas ou ao fim do alcance. Recarga 1,5 s a partir da liberação.
 
 ### A definir
 
