@@ -89,8 +89,10 @@ func _check_static_configuration() -> void:
 	_check((hit_shape.shape as RectangleShape2D).size == Vector2(20, 16) and hit_shape.position == Vector2(18, -28),
 		"Hitbox da Terra 20x16 em (18,-28)")
 	var hurtbox: Area2D = terra.get_node("Hurtbox") as Area2D
-	_check(hurtbox.get_script() == null and hurtbox.collision_layer == 16 and hurtbox.collision_mask == 0
-		and not hurtbox.monitoring, "Hurtbox da Terra inalterada (sem script, layer player_hurtbox)")
+	# Etapa 6 (Fragmento Vivo, aprovada): a Hurtbox da Terra passou a ter script e vida;
+	# layer, mask e monitoring continuam os mesmos.
+	_check(hurtbox is Hurtbox and hurtbox.collision_layer == 16 and hurtbox.collision_mask == 0
+		and not hurtbox.monitoring, "Hurtbox da Terra: script Hurtbox, layer player_hurtbox, sem mask")
 	_check(terra.collision_layer == 4 and terra.collision_mask == 67, "corpo da Terra inalterado (layer 3, mask 1/2/7)")
 	terra.free()
 
@@ -354,15 +356,63 @@ func _test_dummy_death() -> void:
 
 func _test_attack_animation() -> void:
 	print("-- Animação attack")
-	# Sem attack no SpriteFrames da Terra: mantém a animação normal.
-	_check(not _sprite.sprite_frames.has_animation(PlayerCharacter.ANIM_ATTACK), "terra_sprite_frames não tem attack (ainda)")
+	var original: SpriteFrames = _sprite.sprite_frames
+	# Formato: 4 quadros 64x64 (espaço extra à frente para a manopla), sincronizados com o golpe:
+	# 60 FPS com durações 2,5/2,5/3/3 = 5 ticks (preparação, 0,08 s arredondado) + 6 ticks (fase ativa, 0,10 s).
+	var anim: StringName = PlayerCharacter.ANIM_ATTACK
+	var durations: Array[float] = [2.5, 2.5, 3.0, 3.0]
+	var format_ok: bool = original.has_animation(anim) and original.get_frame_count(anim) == 4 \
+		and is_equal_approx(original.get_animation_speed(anim), 60.0) and not original.get_animation_loop(anim)
+	if format_ok:
+		for i: int in 4:
+			var atlas: AtlasTexture = original.get_frame_texture(anim, i) as AtlasTexture
+			format_ok = format_ok and atlas != null and atlas.region == Rect2(i * 64, 0, 64, 64) \
+				and atlas.atlas.resource_path.ends_with("terra_attack.png") \
+				and is_equal_approx(original.get_frame_duration(anim, i), durations[i])
+	_check(format_ok, "attack: 4 quadros 64x64 de terra_attack.png, 60 FPS, sem loop, durações 2,5/2,5/3/3")
+
+	# Golpe real: quadros 0-1 na preparação, 2-3 na fase ativa (punho estendido), idle na recuperação.
+	await _reset(Vector2(ARENA_X, FLOOR_Y), 1.0)
+	for swing: int in 2:
+		await _press("attack")
+		var starts_at_zero: bool = _sprite.animation == anim and _sprite.frame == 0
+		var windup_frames: Array[int] = []
+		var windup_anim_ok: bool = true
+		var active_ok: bool = true
+		var active_ticks: int = 0
+		while _attack.is_striking():
+			if _attack._phase == MeleeAttack.Phase.WINDUP:
+				windup_frames.append(_sprite.frame)
+				windup_anim_ok = windup_anim_ok and _sprite.animation == anim
+			else:
+				active_ticks += 1
+				active_ok = active_ok and _sprite.animation == anim and _sprite.frame >= 2
+			await physics_frame
+		var normal_in_recovery: bool = true
+		while _attack.is_busy():
+			normal_in_recovery = normal_in_recovery and _sprite.animation == PlayerCharacter.ANIM_IDLE
+			await physics_frame
+		# O AnimatedSprite2D avança no _process, não no tick de física: no último tick da preparação
+		# o quadro 2 pode já ter entrado (diferença de 1 tick, imperceptível). Os demais ticks exigem 0-1.
+		var windup_ok: bool = windup_anim_ok and windup_frames.size() > 0
+		for i: int in windup_frames.size() - 1:
+			windup_ok = windup_ok and windup_frames[i] <= 1
+		_check(starts_at_zero and windup_ok,
+			"golpe %d: attack quadros 0-1 na preparação (quadros por tick: %s)" % [swing + 1, windup_frames])
+		_check(active_ok and active_ticks > 0, "golpe %d: punho estendido (quadros 2-3) na fase ativa (%d ticks)" % [swing + 1, active_ticks])
+		_check(normal_in_recovery, "golpe %d: volta para idle na recuperação" % (swing + 1))
+
+	# Sem attack no SpriteFrames (cópia em memória): mantém a animação normal.
+	var without_attack: SpriteFrames = original.duplicate() as SpriteFrames
+	without_attack.remove_animation(anim)
+	_sprite.sprite_frames = without_attack
 	await _reset(Vector2(ARENA_X, FLOOR_Y), 1.0)
 	await _press("attack")
 	var kept_idle: bool = true
 	while _attack.is_busy():
 		kept_idle = kept_idle and _sprite.animation == PlayerCharacter.ANIM_IDLE and _sprite.is_playing()
 		await physics_frame
-	_check(kept_idle, "parada: idle durante todo o golpe")
+	_check(kept_idle, "sem attack, parada: idle durante todo o golpe")
 	Input.action_press("move_right")
 	await _wait(5)
 	await _press("attack")
@@ -371,34 +421,12 @@ func _test_attack_animation() -> void:
 		kept_walk = kept_walk and _sprite.animation == PlayerCharacter.ANIM_WALK
 		await physics_frame
 	Input.action_release("move_right")
-	_check(kept_walk, "andando: walk durante todo o golpe")
+	_check(kept_walk, "sem attack, andando: walk durante todo o golpe")
 
-	# Cópia em memória com uma animação attack de teste (reaproveita quadros do idle).
-	var original: SpriteFrames = _sprite.sprite_frames
-	var with_attack: SpriteFrames = original.duplicate() as SpriteFrames
-	with_attack.add_animation(PlayerCharacter.ANIM_ATTACK)
-	with_attack.set_animation_loop(PlayerCharacter.ANIM_ATTACK, false)
-	with_attack.set_animation_speed(PlayerCharacter.ANIM_ATTACK, 30.0)
-	for i: int in 3:
-		with_attack.add_frame(PlayerCharacter.ANIM_ATTACK, original.get_frame_texture(PlayerCharacter.ANIM_IDLE, i))
-	_sprite.sprite_frames = with_attack
-	await _reset(Vector2(ARENA_X, FLOOR_Y), 1.0)
-	for swing: int in 2:
-		await _press("attack")
-		var starts_at_zero: bool = _sprite.animation == PlayerCharacter.ANIM_ATTACK and _sprite.frame == 0
-		var attack_while_striking: bool = true
-		while _attack.is_striking():
-			attack_while_striking = attack_while_striking and _sprite.animation == PlayerCharacter.ANIM_ATTACK
-			await physics_frame
-		var normal_in_recovery: bool = true
-		while _attack.is_busy():
-			normal_in_recovery = normal_in_recovery and _sprite.animation == PlayerCharacter.ANIM_IDLE
-			await physics_frame
-		_check(starts_at_zero and attack_while_striking, "golpe %d: attack desde o quadro 0 na preparação e fase ativa" % (swing + 1))
-		_check(normal_in_recovery, "golpe %d: volta para idle na recuperação" % (swing + 1))
 	_sprite.sprite_frames = original
+	await _reset(Vector2(ARENA_X, FLOOR_Y), 1.0)
 	await _wait(2)
-	_check(_sprite.animation == PlayerCharacter.ANIM_IDLE and not original.has_animation(PlayerCharacter.ANIM_ATTACK),
+	_check(_sprite.animation == PlayerCharacter.ANIM_IDLE and original.has_animation(anim),
 		"SpriteFrames original restaurado e inalterado")
 
 

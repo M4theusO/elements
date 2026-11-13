@@ -3,6 +3,8 @@
 [ext_resource type="Script" path="res://entities/characters/_shared/player_character.gd" id="1_vg3cj"]
 [ext_resource type="Script" path="res://core/components/hitbox.gd" id="2_hitbox"]
 [ext_resource type="Script" path="res://core/components/melee_attack.gd" id="3_melee"]
+[ext_resource type="Script" path="res://core/components/hurtbox.gd" id="4_hurtbox"]
+[ext_resource type="Script" path="res://core/components/health_component.gd" id="5_health"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_2kwms"]
 size = Vector2(16, 46)
@@ -37,10 +39,13 @@ script = ExtResource("2_hitbox")
 position = Vector2(18, -28)
 shape = SubResource("RectangleShape2D_hitbox")
 
-[node name="Hurtbox" type="Area2D" parent="." unique_id=833843384]
+[node name="Hurtbox" type="Area2D" parent="." unique_id=833843384 node_paths=PackedStringArray("health")]
 collision_layer = 16
 collision_mask = 0
 monitoring = false
+script = ExtResource("4_hurtbox")
+health = NodePath("../HealthComponent")
+invulnerability_time = 0.6
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox" unique_id=31073735]
 position = Vector2(0, -22)
@@ -49,3 +54,7 @@ shape = SubResource("RectangleShape2D_xf0nf")
 [node name="MeleeAttack" type="Node" parent="." node_paths=PackedStringArray("hitbox")]
 script = ExtResource("3_melee")
 hitbox = NodePath("../Visuals/Hitbox")
+
+[node name="HealthComponent" type="Node" parent="."]
+script = ExtResource("5_health")
+max_health = 5

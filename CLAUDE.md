@@ -59,25 +59,33 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `core/resources/character_stats.gd` (`CharacterStats`) e `entities/characters/_shared/player_character.{tscn,gd}` (`PlayerCharacter`): aceleração/desaceleração (sensível ao analógico), gravidade com queda mais forte, pulo variável, coyote time, jump buffer, velocidade máxima de queda, troca automática de animação.
   - `entities/characters/terra/terra.tscn` (herdada) + `terra_stats.tres` + `terra_sprite_frames.tres`.
   - Colisão do corpo 16x46 em (0,-23); Hurtbox 14x44 em (0,-22). Altura mínima de passagem no level design: 3 tiles (48 px).
-  - Animações da Terra: `idle` (arte original, 4 quadros), `walk`, `jump` e `fall` (**placeholders** gerados a partir do idle; ver seção 7, "Animações dos protagonistas").
+  - Animações da Terra: `idle` (arte original, 4 quadros), `walk` (5 quadros), `jump` e `fall` (2 quadros cada), `attack` e `ability` (4 quadros 64x64 cada), estas com arte gerada por IA e convertida; ver seção 7, "Animações dos protagonistas".
   - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera, 2 `TrainingDummy` em x 260 e 880), **cena principal temporária**.
 - **Marco 1, etapa 3 (combate básico da Terra) — validado manualmente e commitado (`16f4532`):**
   - Componentes em `core/components/`: `HealthComponent`, `Hurtbox`, `Hitbox`, `MeleeAttack`; dados em `core/resources/attack_data.gd` (`AttackData`). Ver seção 9, "Combate".
   - Terra: `terra_basic_attack.tres` (dano 1; 0,08 / 0,10 / 0,22 s), Hitbox 20x16 em (18,-28), acionada por `attack`.
   - Inimigo de teste `entities/enemies/training_dummy/` (3 de vida, `Polygon2D` provisório, pisca e some ao morrer).
-  - `tests/combat/combat_test.gd`: teste automatizado (64 verificações). Executar: `godot --headless --path . -s res://tests/combat/combat_test.gd`.
+  - `tests/combat/combat_test.gd`: teste automatizado (66 verificações, incluindo o formato e a sincronia da animação `attack`). Executar: `godot --headless --path . -s res://tests/combat/combat_test.gd`.
 - **Marco 1, etapa 5 (Punho Sísmico da Terra) — validado manualmente e commitado:**
   - `core/components/character_ability.gd` (`CharacterAbility`): interface mínima da habilidade (ação `ability`).
   - `entities/characters/terra/abilities/seismic_fist.gd` (`SeismicFist`) + `seismic_wave.{tscn,gd}` (`SeismicWave`, subclasse de `Hitbox`). Ver seção 9, "Combate".
-  - `tests/combat/seismic_fist_test.gd`: teste automatizado (72 verificações). Executar: `godot --headless --path . -s res://tests/combat/seismic_fist_test.gd`.
+  - `tests/combat/seismic_fist_test.gd`: teste automatizado (73 verificações, incluindo o formato e a sincronia da animação `ability`). Executar: `godot --headless --path . -s res://tests/combat/seismic_fist_test.gd`.
+- **Marco 1, etapa 4 (primeiro inimigo: Fragmento Vivo) — implementado, aguardando validação manual (não commitado):**
+  - Base `entities/enemies/_shared/enemy.gd` (`Enemy`); `TrainingDummy` migrado para ela (mesmo comportamento).
+  - `entities/enemies/living_fragment/` (`LivingFragment`): patrulha, detecção com linha de visão, perseguição, investida, recarga; sprites idle/walk/attack/hit/death (arte original reduzida, quadros 64x48) ligados aos estados. Ver seção 9, "Inimigos".
+  - Vida da Terra: `HealthComponent` (5) na cena base do jogador; `Hurtbox` com invulnerabilidade de 0,6 s; feedback visual provisório (clarão + piscar). Sem morte, respawn ou HUD.
+  - MovementLab: `LivingFragmentFloor` (x 1240, perto da parede direita) e `LivingFragmentPlatform` (sobre a plataforma one-way).
+  - `tests/enemies/living_fragment_test.gd`: teste automatizado (94 verificações). Executar: `godot --headless --path . -s res://tests/enemies/living_fragment_test.gd`.
 - `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 
 **Pendente / próximos passos possíveis:**
-- Arte final de `walk`, `jump` e `fall` (substituir os PNGs mantendo nome e formato).
+- Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
 - Opcional: balanço da trança no `walk`.
 - Teste visual no editor (F5) e na exportação Web; export templates 4.7.2 ainda **não instalados**, preset Web ainda não criado.
-- Arte das animações `attack` (golpe com a manopla) e `ability` (golpe no chão) da Terra.
-- Marco 1, próximas etapas: inimigos, cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
+- Opcional, após teste no jogo: mostrar a volta à guarda na recuperação do golpe e o "depois do impacto" após a liberação do Punho Sísmico (hoje ambos voltam direto ao idle; exige mudar a regra do `attack`/`ability`).
+- Arte do efeito da onda sísmica (`SeismicWave` ainda usa o desenho de depuração); há uma imagem em `Desktop\sprites\personagens\terra\terra_seismic-effect.png`.
+- Morte da Terra (hoje só para de receber dano em 0 de vida), respawn e HUD de vida.
+- Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -178,8 +186,12 @@ Regras:
 - `ability` segue a mesma regra, durante a preparação da habilidade especial.
 - `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com deslocamento horizontal real (`get_real_velocity()`, para que empurrar uma parede resulte em `idle`) e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
 - `jump` não tem loop (para no último quadro); `idle`, `walk` e `fall` têm loop.
-- Spritesheets: quadros de 48x64, fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
-- `terra_walk.png`, `terra_jump.png` e `terra_fall.png` atuais são **placeholders** gerados a partir do idle; a arte final substitui os arquivos mantendo nome e formato (8, 2 e 2 quadros).
+- Spritesheets: quadros de 48x64 (exceção: `attack` e `ability` em 64x64, ver abaixo), fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
+- `terra_jump.png` (impulso, subida) e `terra_fall.png` (ápice, descida) vêm de uma folha de 6 poses gerada por IA e convertida para a grade 48x64 (amostragem do centro de cada bloco, fundo magenta removido, poses centralizadas no corpo; pés no máximo em y = 60). A folha completa, com agachar e aterrissar, está fora do projeto (`Desktop\sprites\personagens\terra\terra_jump_6poses_48x64.png`). A Terra nelas fica cerca de 10–15% maior que no `idle`.
+- `terra_walk.png`: 5 quadros a 7,5 FPS (ciclo de 0,67 s), mesma origem e conversão do pulo, mesma altura do `idle` (51 px); pés em y = 60 em todos os quadros e centralização pelo tronco (metade de cima), para as pernas balançarem sem a personagem tremer. A folha gerada tinha 6 quadros; o último (quase parado, igual ao primeiro) foi removido porque travava o loop. A folha de 6 quadros e a imagem original da IA estão fora do projeto (`Desktop\sprites\personagens\terra\`).
+- `terra_attack.png`: 4 quadros de **64x64** (recuo, carga, soco, soco estendido). O corpo fica na mesma posição dos quadros 48x64 (origem em x = 25, mesmo `offset` do `AnimatedSprite2D`) e os 16 px extras ficam à frente, para a manopla; funciona com o flip porque ele é feito em `Visuals.scale.x`. Pés em y = 60; nas poses de soco o corpo avança 1–3 px para a trança e o pé de trás não saírem do quadro. Sincronia com o golpe: 60 FPS, durações 2,5 / 2,5 / 3 / 3 = 5 ticks na preparação (quadros 0–1) e 6 na fase ativa (quadros 2–3, punho dentro da hitbox). A guarda inicial e a volta à guarda ficaram de fora (folha de 6 poses em `Desktop\sprites\personagens\terra\terra_attack_6poses_64x64.png`). Na guarda a Terra tem ~44 px de altura (postura baixa e arte um pouco menor que o `idle`).
+- `terra_seismic_fist.png` (animação `ability`): 4 quadros de **64x64** (agachar, erguer o punho, descer, impacto com a terra explodindo), mesma regra de posição do `attack`. Sincronia com a preparação de 0,25 s: 60 FPS, durações 4 / 4 / 4 / 3 = 15 ticks; o impacto ocupa os últimos 3 ticks, logo antes de a onda nascer. A arte original tinha pixels finos e irregulares (sem grade detectável); foi reduzida por moda (cor mais frequente de cada área), com a guarda ajustada para os 51 px do `idle`. Guarda, base e "depois do impacto" ficaram de fora (folha de 7 poses em `Desktop\sprites\personagens\terra\terra_seismic_fist_7poses_64x64.png`).
+- Arte nova: não redimensionar pixel art por fator não inteiro (estraga os pixels). Imagens de gerador devem vir com fundo magenta sólido; a conversão é feita por script (amostragem do centro dos blocos quando a grade é regular; redução por moda quando não é).
 
 ## 8. Convenções de código (GDScript)
 
@@ -250,9 +262,10 @@ Layers 9–32 livres. **Nenhuma layer nova sem aprovação.**
 
 - **Corpo físico** (`CharacterBody2D`): só movimento e colisão com o cenário. Não recebe nem causa dano.
 - **Hitbox** (`Area2D`, *causa* dano): **não ocupa layer**; apenas procura (mask) hurtboxes/destrutíveis. É o lado que detecta o acerto. Golpes, habilidades e projéteis são todos hitboxes — projéteis apenas adicionam `world` à mask para sumir ao bater em paredes.
-- **Hurtbox** (`Area2D`, *recebe* dano): ocupa `player_hurtbox` ou `enemy_hurtbox`, sem mask. Formato independente do corpo físico; invencibilidade = desligar `monitorable`.
+- **Hurtbox** (`Area2D`, *recebe* dano): ocupa `player_hurtbox` ou `enemy_hurtbox`, sem mask. Formato independente do corpo físico. Invencibilidade temporária (após dano) = `invulnerability_time` da `Hurtbox`, que ignora golpes logicamente (vale também para dois golpes no mesmo tick); desligar `monitorable` fica para remover a hurtbox de vez (ex.: morte do inimigo).
 - **Sensor de interação** (`Area2D` do jogador): sem layer, mask `interactables`.
 - **Zonas de gatilho** (troca de sala, checkpoint, câmera): sem layer, mask `player`.
+- **Zona de detecção do inimigo** (`Area2D`): sem layer, mask `player`, `monitorable` desligado.
 
 Os lados (jogador × inimigo) são definidos pelas layers; o **tipo** de ataque (golpe, projétil, habilidade) não.
 
@@ -271,6 +284,7 @@ Linhas = quem procura (mask); colunas = layer do alvo.
 | Hitbox ambiental (espinhos, lava) | | | | | ✅ | | | |
 | Sensor de interação | | | | | | | | ✅ |
 | Zonas de gatilho | | | ✅ | | | | | |
+| Zona de detecção do inimigo | | | ✅ | | | | | |
 
 #### Regras de design
 
@@ -283,7 +297,8 @@ Linhas = quem procura (mask); colunas = layer do alvo.
 ### Combate
 
 - **`HealthComponent`** (`Node`): `max_health`/`current_health` inteiros, `take_damage(amount)`; signals `damaged(amount)` e `died` (uma única vez). Vida nunca negativa; dano zero/negativo ou após a morte é ignorado.
-- **`Hurtbox`** (`Area2D`): `receive_hit(damage)` emite `hit_received` e repassa ao `HealthComponent` exportado (`health`).
+- **`Hurtbox`** (`Area2D`): `receive_hit(damage)` emite `hit_received` e repassa ao `HealthComponent` exportado (`health`). `invulnerability_time` (padrão 0 = desligado): após um golpe aceito, ignora novos golpes por esse tempo (`is_invulnerable()`, `get_invulnerability_left()`); roda com `process_physics_priority = -1` para a duração ser exata (0,6 s = 36 ticks).
+- **Vida da Terra** (cena base do jogador): `HealthComponent` 5 de vida; `Hurtbox` com invulnerabilidade 0,6 s. `PlayerCharacter` só faz o feedback visual (clarão em `Visuals.modulate` + sprite piscando em `self_modulate`), sem alterar movimento, pulo, golpe ou habilidade. Em 0 de vida, novos golpes são ignorados; não há morte/respawn ainda.
 - **`Hitbox`** (`Area2D`): sem layer; mask do alvo (jogador: `enemy_hurtbox`; `destructibles` entra na etapa de cenário destrutível). `activate()`/`deactivate()` alteram `monitoring` com `set_deferred`. Enquanto ativa, consulta as sobreposições a cada tick; cada `Hurtbox` é atingida no máximo uma vez por ativação (vários alvos por golpe são permitidos). `show_debug` desenha o alcance (provisório: translúcido na preparação, forte na fase ativa).
 - **`MeleeAttack`** (`Node`): fases `READY → WINDUP → ACTIVE → RECOVERY` contadas em `_physics_process` a partir de um `AttackData`; `try_attack()`, `is_striking()` (preparação ou ativa), `is_busy()`; signals `attack_started`/`attack_finished`. Roda com `process_physics_priority = -1` para o personagem ler o estado do tick atual.
 - **`PlayerCharacter`**: a ação `attack` chama `try_attack()`; o lado fica travado enquanto `is_striking()`; movimento e física não mudam durante o golpe. A `Hitbox` fica em `Visuals`, então acompanha o flip.
@@ -295,6 +310,22 @@ Linhas = quem procura (mask); colunas = layer do alvo.
 - **`PlayerCharacter`**: `@export var ability: CharacterAbility` (vazio na cena base). A ação `ability` chama `try_activate()`, exceto durante o golpe básico (`is_striking()`); o golpe básico é ignorado enquanto `is_casting()`; a direção fica travada durante a preparação. `get_facing()` expõe o lado (1/-1).
 - Habilidades concretas ficam em `entities/characters/<nome>/abilities/`, como nó filho na cena do personagem, e rodam com `process_physics_priority = -1`.
 - **Punho Sísmico da Terra** (`SeismicFist`, valores em `@export` no nó da `terra.tscn`): só no chão; preparação 0,25 s (direção travada, movimento livre, aviso translúcido da onda); sair do chão na preparação cancela sem onda, dano ou recarga. A `SeismicWave` (`Hitbox` com `top_level`, filha da Terra, mask `enemy_hurtbox`) nasce 12 px à frente e percorre 96 px a 240 px/s, dano 2 (uma vez por alvo). A cada tick verifica a posição futura com raycasts: parede (`wall_mask` = world) e chão sob o novo centro (`ground_mask` = world + platforms; plataformas one-way contam como chão e não como parede); some em paredes, bordas ou ao fim do alcance. Recarga 1,5 s a partir da liberação.
+
+#### Inimigos
+
+- **`Enemy`** (`entities/enemies/_shared/enemy.gd`, `CharacterBody2D`): base mínima — liga `HealthComponent`/`Hurtbox`, pisca ao receber dano, ao morrer desliga o `monitorable` da hurtbox, chama o gancho `_on_death()` e some após o piscar, a menos que `_play_death_animation()` retorne true (o inimigo cuida de sumir; padrão false). Sem IA, gravidade ou estados. Cena precisa de `Visuals`, `HealthComponent`, `Hurtbox`. Inimigos não usam invulnerabilidade.
+- **`TrainingDummy`**: `extends Enemy`, sem código próprio.
+- **Fragmento Vivo** (`LivingFragment`, `entities/enemies/living_fragment/`, valores em `@export`): estados `PATROL`, `CHASE`, `ATTACK`, `DEAD` (enum + `match`).
+  - Corpo 18x24 (layer `enemies`, mask world/platforms/destructibles), gravidade padrão do projeto; 3 de vida.
+  - Visual: `Visuals/AnimatedSprite2D` + `living_fragment_sprite_frames.tres`. Quadros de 64x48, olhando para a direita, pés na linha y = 44, centro em x = 32 (`centered` desligado, `offset` (-32,-45)); corpo ~30x26. Animações: `idle` 4 quadros (6 fps, loop), `walk` 6 (8 fps, loop), `attack` 8 (10 fps com durações por quadro: 0–3 = preparação 0,35 s, 4–5 = ativa 0,20 s, 6–7 = recuperação 0,40 s), `hit` 3 (12 fps), `death` 6 (10 fps).
+  - Animação por estado (`_update_animation()` no fim de cada tick): `walk` com deslocamento horizontal real (`get_real_velocity()`) e `speed_scale` = velocidade / `patrol_speed` (1x na patrulha, 2x na perseguição), senão `idle`; `attack` do quadro 0 ao entrar em `ATTACK` (uma vez por investida); `hit` do quadro 0 ao receber dano, com prioridade sobre idle/walk até terminar, sem interromper a investida nem a morte. Dano fora da investida também atordoa: `hit_stun_time` = 0,25 s (15 ticks) parado, sem trocar de estado nem atacar. Animação ausente no `SpriteFrames` é ignorada.
+  - Os PNGs em `sprites/` foram reduzidos por script a partir das folhas originais de 2172x724, guardadas fora do projeto (`Desktop\sprites\inimigos\`): pixels com alfa < 50% descartados, quadros detectados por colunas ocupadas, média por área com alfa binário. Cada folha veio numa escala diferente; o fator foi normalizado pela altura do quadro 0 em relação ao idle (idle 13, walk 10, attack 6,6, hit 12, death 10,2). Âncora horizontal: centro do quadro, exceto `attack`, ancorado no olho verde (a poeira deslocava o centro). Base dos pés = fundo do quadro 0 de cada folha.
+  - Patrulha 30 px/s em ±48 px da origem; vira nos limites, em paredes e em bordas.
+  - `DetectionArea` (círculo de 80 px, mask `player`) + linha de visão (raio dos olhos, 12 px, até 16 px acima dos pés do alvo; `sight_mask` = world + destructibles; plataformas one-way não bloqueiam). Perde o alvo acima de 128 px.
+  - Perseguição 60 px/s; para a 24 px do alvo.
+  - Investida (`MeleeAttack` + `living_fragment_attack.tres`): dispara com |dx| ≤ 40 e |dy| ≤ 24, no chão; preparação 0,35 s parada (o aviso é a própria animação; `show_debug` da hitbox desligado na cena), fase ativa 0,20 s a 200 px/s (até 40 px; com o alvo à frente, para a `dash_stop_distance` = 12 px dele, sem atravessar a Terra), recuperação 0,40 s parada; direção travada. Hitbox 24x12 em (12,-10) (do centro para a frente), mask `player_hurtbox`, dano 1. Recarga 1,5 s a partir do fim da recuperação. Sem dano por contato.
+  - Bordas: raio para baixo logo após a borda frontal (`ground_mask` = world + platforms) em todos os estados; nunca cai.
+  - Morte: para tudo, desliga o `MeleeAttack` (`PROCESS_MODE_DISABLED`), a hitbox e a detecção. Toca `death` e some ao fim dela (`animation_finished`), via `_play_death_animation()` da base `Enemy`.
 
 ### A definir
 

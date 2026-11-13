@@ -486,7 +486,46 @@ func _test_movement_preserved() -> void:
 
 func _test_animation() -> void:
 	print("-- Animação ability")
-	_check(not _sprite.sprite_frames.has_animation(PlayerCharacter.ANIM_ABILITY), "terra_sprite_frames não tem ability (ainda)")
+	var original: SpriteFrames = _sprite.sprite_frames
+	var anim: StringName = PlayerCharacter.ANIM_ABILITY
+	# Formato: 4 quadros 64x64 (agachar, erguer, descer, impacto), 60 FPS, durações 4/4/4/3 = 15 ticks = preparação de 0,25 s.
+	var durations: Array[float] = [4.0, 4.0, 4.0, 3.0]
+	var format_ok: bool = original.has_animation(anim) and original.get_frame_count(anim) == 4 \
+		and is_equal_approx(original.get_animation_speed(anim), 60.0) and not original.get_animation_loop(anim)
+	if format_ok:
+		for i: int in 4:
+			var atlas: AtlasTexture = original.get_frame_texture(anim, i) as AtlasTexture
+			format_ok = format_ok and atlas != null and atlas.region == Rect2(i * 64, 0, 64, 64) \
+				and atlas.atlas.resource_path.ends_with("terra_seismic_fist.png") \
+				and is_equal_approx(original.get_frame_duration(anim, i), durations[i])
+	_check(format_ok, "ability: 4 quadros 64x64 de terra_seismic_fist.png, 60 FPS, sem loop, durações 4/4/4/3")
+
+	# Habilidade real: começa no quadro 0, avança em ordem e chega ao impacto (quadro 3) antes da onda nascer.
+	# Tolerância de 1 tick: o AnimatedSprite2D avança no _process, não no tick de física.
+	await _reset(Vector2(60.0, FLOOR_Y), 1.0)
+	await _press("ability")
+	var starts_at_zero: bool = _sprite.animation == anim and _sprite.frame == 0
+	var frames_seen: Array[int] = []
+	var ability_while_casting: bool = true
+	while _fist.is_casting():
+		ability_while_casting = ability_while_casting and _sprite.animation == anim
+		frames_seen.append(_sprite.frame)
+		await physics_frame
+	var in_order: bool = true
+	for i: int in range(1, frames_seen.size()):
+		in_order = in_order and frames_seen[i] >= frames_seen[i - 1]
+	var impact_ticks: int = frames_seen.count(3)
+	_check(starts_at_zero and ability_while_casting and in_order,
+		"com ability: toca em ordem durante a preparação (quadros por tick: %s)" % [frames_seen])
+	_check(impact_ticks >= 2 and impact_ticks <= 4, "impacto (quadro 3) nos últimos ticks da preparação (%d ticks)" % impact_ticks)
+	_check(_sprite.animation == PlayerCharacter.ANIM_IDLE, "após a liberação: volta para idle")
+	await _follow_wave(_waves()[0])
+	await _wait_cooldown()
+
+	# Sem ability no SpriteFrames (cópia em memória): mantém a animação normal.
+	var without_ability: SpriteFrames = original.duplicate() as SpriteFrames
+	without_ability.remove_animation(anim)
+	_sprite.sprite_frames = without_ability
 	await _reset(Vector2(60.0, FLOOR_Y), 1.0)
 	await _press("ability")
 	var kept_idle: bool = true
@@ -494,28 +533,10 @@ func _test_animation() -> void:
 		kept_idle = kept_idle and _sprite.animation == PlayerCharacter.ANIM_IDLE and _sprite.is_playing()
 		await physics_frame
 	_check(kept_idle, "sem ability: idle durante a preparação")
-	await _follow_wave(_waves()[0])
-	await _wait_cooldown()
-
-	var original: SpriteFrames = _sprite.sprite_frames
-	var with_ability: SpriteFrames = original.duplicate() as SpriteFrames
-	with_ability.add_animation(PlayerCharacter.ANIM_ABILITY)
-	with_ability.set_animation_loop(PlayerCharacter.ANIM_ABILITY, false)
-	for i: int in 2:
-		with_ability.add_frame(PlayerCharacter.ANIM_ABILITY, original.get_frame_texture(PlayerCharacter.ANIM_IDLE, i))
-	_sprite.sprite_frames = with_ability
-	await _reset(Vector2(60.0, FLOOR_Y), 1.0)
-	await _press("ability")
-	var ability_while_casting: bool = true
-	while _fist.is_casting():
-		ability_while_casting = ability_while_casting and _sprite.animation == PlayerCharacter.ANIM_ABILITY
-		await physics_frame
-	_check(ability_while_casting, "com ability: toca durante a preparação")
-	_check(_sprite.animation == PlayerCharacter.ANIM_IDLE, "após a liberação: volta para idle")
 	_sprite.sprite_frames = original
 	await _follow_wave(_waves()[0])
 	await _wait_cooldown()
-	_check(not original.has_animation(PlayerCharacter.ANIM_ABILITY), "SpriteFrames original inalterado")
+	_check(original.has_animation(anim), "SpriteFrames original inalterado")
 
 
 # --- Auxiliares -----------------------------------------------------------------

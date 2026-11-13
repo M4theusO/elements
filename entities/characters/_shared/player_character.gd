@@ -1,6 +1,7 @@
 class_name PlayerCharacter
 extends CharacterBody2D
-## Base compartilhada pelos protagonistas: movimento horizontal, gravidade, pulo e ataque básico.
+## Base compartilhada pelos protagonistas: movimento horizontal, gravidade, pulo, ataque básico
+## e vida (HealthComponent + Hurtbox com invulnerabilidade após dano).
 ## Todos os parâmetros vêm de um CharacterStats; cada personagem fornece o seu.
 ## O golpe (dados e alcance) é configurado na cena de cada personagem, em MeleeAttack e Visuals/Hitbox.
 
@@ -13,6 +14,11 @@ const ANIM_ATTACK: StringName = &"attack"
 const ANIM_ABILITY: StringName = &"ability"
 ## Velocidade horizontal mínima (px/s) para considerar que o personagem está andando.
 const WALK_SPEED_THRESHOLD: float = 1.0
+## Feedback de dano (provisório): clarão no acerto e sprite piscando durante a invulnerabilidade.
+const DAMAGE_FLASH_COLOR: Color = Color(2.0, 2.0, 2.0)
+const DAMAGE_FLASH_DURATION: float = 0.1
+const INVULNERABLE_BLINK_INTERVAL: float = 0.075
+const INVULNERABLE_ALPHA: float = 0.35
 
 @export var stats: CharacterStats
 ## Habilidade especial do personagem (ação "ability"). Vazia na cena base.
@@ -22,16 +28,27 @@ var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
 ## Verdadeiro enquanto sobe por causa de um pulo (permite o corte do pulo variável).
 var _is_jump_rising: bool = false
+var _damage_flash_tween: Tween
 
 @onready var _visuals: Node2D = $Visuals
 @onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
 @onready var _melee_attack: MeleeAttack = $MeleeAttack
+@onready var _hurtbox: Hurtbox = $Hurtbox
+@onready var _health: HealthComponent = $HealthComponent
 
 
 func _ready() -> void:
 	if stats == null:
 		push_warning("%s: nenhum CharacterStats atribuído; usando valores padrão." % name)
 		stats = CharacterStats.new()
+	_health.damaged.connect(_on_damaged)
+
+
+func _process(_delta: float) -> void:
+	# Apenas visual: não interfere em movimento, pulo, golpe ou habilidade.
+	var left: float = _hurtbox.get_invulnerability_left()
+	var hidden_phase: bool = left > 0.0 and int(left / INVULNERABLE_BLINK_INTERVAL) % 2 == 0
+	_sprite.self_modulate.a = INVULNERABLE_ALPHA if hidden_phase else 1.0
 
 
 func _physics_process(delta: float) -> void:
@@ -66,6 +83,22 @@ func get_jump_gravity() -> float:
 ## Lado para onde o personagem olha: 1.0 (direita) ou -1.0 (esquerda).
 func get_facing() -> float:
 	return _visuals.scale.x
+
+
+func get_health() -> HealthComponent:
+	return _health
+
+
+func get_hurtbox() -> Hurtbox:
+	return _hurtbox
+
+
+func _on_damaged(_amount: int) -> void:
+	if _damage_flash_tween != null:
+		_damage_flash_tween.kill()
+	_visuals.modulate = DAMAGE_FLASH_COLOR
+	_damage_flash_tween = create_tween()
+	_damage_flash_tween.tween_property(_visuals, "modulate", Color.WHITE, DAMAGE_FLASH_DURATION)
 
 
 func _is_ability_casting() -> bool:

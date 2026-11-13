@@ -4,6 +4,8 @@
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_walk.png" id="2_walk"]
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_jump.png" id="3_jump"]
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_fall.png" id="4_fall"]
+[ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_attack.png" id="5_attack"]
+[ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_seismic_fist.png" id="6_ability"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_idle_0"]
 atlas = ExtResource("1_idle")
@@ -41,18 +43,6 @@ region = Rect2(144, 0, 48, 64)
 atlas = ExtResource("2_walk")
 region = Rect2(192, 0, 48, 64)
 
-[sub_resource type="AtlasTexture" id="AtlasTexture_walk_5"]
-atlas = ExtResource("2_walk")
-region = Rect2(240, 0, 48, 64)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_walk_6"]
-atlas = ExtResource("2_walk")
-region = Rect2(288, 0, 48, 64)
-
-[sub_resource type="AtlasTexture" id="AtlasTexture_walk_7"]
-atlas = ExtResource("2_walk")
-region = Rect2(336, 0, 48, 64)
-
 [sub_resource type="AtlasTexture" id="AtlasTexture_jump_0"]
 atlas = ExtResource("3_jump")
 region = Rect2(0, 0, 48, 64)
@@ -68,6 +58,38 @@ region = Rect2(0, 0, 48, 64)
 [sub_resource type="AtlasTexture" id="AtlasTexture_fall_1"]
 atlas = ExtResource("4_fall")
 region = Rect2(48, 0, 48, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_0"]
+atlas = ExtResource("5_attack")
+region = Rect2(0, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_1"]
+atlas = ExtResource("5_attack")
+region = Rect2(64, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_2"]
+atlas = ExtResource("5_attack")
+region = Rect2(128, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_attack_3"]
+atlas = ExtResource("5_attack")
+region = Rect2(192, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ability_0"]
+atlas = ExtResource("6_ability")
+region = Rect2(0, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ability_1"]
+atlas = ExtResource("6_ability")
+region = Rect2(64, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ability_2"]
+atlas = ExtResource("6_ability")
+region = Rect2(128, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_ability_3"]
+atlas = ExtResource("6_ability")
+region = Rect2(192, 0, 64, 64)
 
 [resource]
 animations = [{
@@ -103,19 +125,10 @@ animations = [{
 }, {
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_walk_4")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_walk_5")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_walk_6")
-}, {
-"duration": 1.0,
-"texture": SubResource("AtlasTexture_walk_7")
 }],
 "loop": true,
 "name": &"walk",
-"speed": 12.0
+"speed": 7.5
 }, {
 "frames": [{
 "duration": 1.0,
@@ -138,4 +151,38 @@ animations = [{
 "loop": true,
 "name": &"fall",
 "speed": 8.0
+}, {
+"frames": [{
+"duration": 2.5,
+"texture": SubResource("AtlasTexture_attack_0")
+}, {
+"duration": 2.5,
+"texture": SubResource("AtlasTexture_attack_1")
+}, {
+"duration": 3.0,
+"texture": SubResource("AtlasTexture_attack_2")
+}, {
+"duration": 3.0,
+"texture": SubResource("AtlasTexture_attack_3")
+}],
+"loop": false,
+"name": &"attack",
+"speed": 60.0
+}, {
+"frames": [{
+"duration": 4.0,
+"texture": SubResource("AtlasTexture_ability_0")
+}, {
+"duration": 4.0,
+"texture": SubResource("AtlasTexture_ability_1")
+}, {
+"duration": 4.0,
+"texture": SubResource("AtlasTexture_ability_2")
+}, {
+"duration": 3.0,
+"texture": SubResource("AtlasTexture_ability_3")
+}],
+"loop": false,
+"name": &"ability",
+"speed": 60.0
 }]

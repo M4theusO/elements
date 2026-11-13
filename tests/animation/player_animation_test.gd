@@ -107,7 +107,7 @@ func _check_static_configuration() -> void:
 	# [nome, quadros, FPS, loop, arquivo]
 	var expected_animations: Array = [
 		[PlayerCharacter.ANIM_IDLE, 4, 6.0, true, "terra_idle.png"],
-		[PlayerCharacter.ANIM_WALK, 8, 12.0, true, "terra_walk.png"],
+		[PlayerCharacter.ANIM_WALK, 5, 7.5, true, "terra_walk.png"],
 		[PlayerCharacter.ANIM_JUMP, 2, 10.0, false, "terra_jump.png"],
 		[PlayerCharacter.ANIM_FALL, 2, 8.0, true, "terra_fall.png"],
 	]
@@ -121,7 +121,7 @@ func _check_static_configuration() -> void:
 			var atlas: AtlasTexture = frames.get_frame_texture(anim, i) as AtlasTexture
 			ok = ok and atlas != null and atlas.region == Rect2(i * 48, 0, 48, 64) \
 				and atlas.atlas.resource_path.ends_with(spec[4])
-		_check(ok, "%s: %d quadros 48x64 de %s, %d FPS, loop=%s" % [anim, spec[1], spec[4], spec[2], spec[3]])
+		_check(ok, "%s: %d quadros 48x64 de %s, %s FPS, loop=%s" % [anim, spec[1], spec[4], spec[2], spec[3]])
 	terra.free()
 
 
