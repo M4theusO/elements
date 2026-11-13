@@ -127,11 +127,12 @@ func _update_facing(direction: float) -> void:
 
 func _update_animation() -> void:
 	# No ar: jump subindo, fall descendo. No chão: walk em movimento, idle parado.
-	# velocity reflete as colisões do move_and_slide(): empurrar uma parede resulta em idle.
+	# Walk usa o deslocamento real do move_and_slide(): empurrar uma parede resulta em idle,
+	# inclusive no tick do pouso, em que velocity.x pode sobrar sem movimento efetivo.
 	var animation_name: StringName
 	if not is_on_floor():
 		animation_name = ANIM_JUMP if velocity.y < 0.0 else ANIM_FALL
-	elif absf(velocity.x) > WALK_SPEED_THRESHOLD:
+	elif absf(get_real_velocity().x) > WALK_SPEED_THRESHOLD:
 		animation_name = ANIM_WALK
 	else:
 		animation_name = ANIM_IDLE

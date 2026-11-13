@@ -51,7 +51,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 
 ## 3. Estado atual do projeto
 
-Última atualização: 2026-11-12. Repositório: https://github.com/M4theusO/elements (privado, branch `master`).
+Última atualização: 2026-11-13. Repositório: https://github.com/M4theusO/elements (privado, branch `master`).
 
 **Concluído:**
 - Fundação: `project.godot` (seção 9), estrutura de pastas (seção 7), Input Map e Collision Layers.
@@ -61,7 +61,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - Colisão do corpo 16x46 em (0,-23); Hurtbox 14x44 em (0,-22). Altura mínima de passagem no level design: 3 tiles (48 px).
   - Animações da Terra: `idle` (arte original, 4 quadros), `walk`, `jump` e `fall` (**placeholders** gerados a partir do idle; ver seção 7, "Animações dos protagonistas").
   - `tests/movement_lab/movement_lab.tscn`: laboratório (chão, paredes, degraus de 1–4 tiles, plataforma one-way, câmera), **cena principal temporária**.
-- Validação automatizada (82 verificações: estrutura, animações, movimento) existe apenas como script fora do repositório; não está versionada.
+- `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 
 **Pendente / próximos passos possíveis:**
 - Arte final de `walk`, `jump` e `fall` (substituir os PNGs mantendo nome e formato).
@@ -164,7 +164,7 @@ Regras:
 
 - Cada protagonista define suas animações num `SpriteFrames` próprio (`entities/characters/<nome>/<nome>_sprite_frames.tres`), usado pelo `Visuals/AnimatedSprite2D` da cena herdada. A cena base não tem `SpriteFrames`.
 - **Nomes padronizados** (constantes em `PlayerCharacter`): `idle`, `walk`, `jump`, `fall`. Novos nomes só com aprovação.
-- `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com velocidade horizontal e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
+- `PlayerCharacter` escolhe a animação: no ar, `jump` subindo e `fall` descendo; no chão, `walk` com deslocamento horizontal real (`get_real_velocity()`, para que empurrar uma parede resulte em `idle`) e `idle` parado. Animação ausente no `SpriteFrames` cai para `idle`; sem `SpriteFrames`, nada acontece (sem erro).
 - `jump` não tem loop (para no último quadro); `idle`, `walk` e `fall` têm loop.
 - Spritesheets: quadros de 48x64, fundo transparente, personagem olhando para a direita. Animações no chão (`idle`, `walk`) com o pé apoiado na linha y = 60 do quadro; nas aéreas a linha é a mesma referência, mas os pés podem ficar acima dela.
 - `terra_walk.png`, `terra_jump.png` e `terra_fall.png` atuais são **placeholders** gerados a partir do idle; a arte final substitui os arquivos mantendo nome e formato (8, 2 e 2 quadros).
