@@ -12,6 +12,8 @@ extends Enemy
 ## Carapaça nas costas (CarapaceHurtbox): golpes por trás causam metade do dano, exceto em
 ## STUNNED. Em IDLE/PATROL, um golpe o faz parar por um instante e virar para o atacante;
 ## o ataque (CHARGE, DASH, STUNNED) nunca é interrompido nem muda de direção.
+## Animações (Visuals/AnimatedSprite2D): idle/walk em IDLE/PATROL, hit durante a reação, charge,
+## attack e stunned nos estados do ataque, death uma vez antes de sumir.
 
 enum State { IDLE, PATROL, CHARGE, DASH, STUNNED, DEAD }
 
@@ -22,14 +24,17 @@ const POSITION_EPSILON: float = 0.01
 ## Diferença horizontal mínima para virar na direção do alvo ao iniciar o ataque.
 const FACE_TARGET_MIN_DX: float = 0.1
 
-## Feedback provisório do ataque no self_modulate do sprite (Visuals/AnimatedSprite2D), até as
-## animações próprias de cada estado; o clarão de dano usa Visuals.modulate e se soma a este.
-## CHARGE pisca entre o normal e o brilho; DASH fica no brilho intenso; STUNNED fica apagado.
-const CRYSTAL_NORMAL: Color = Color.WHITE
-const CRYSTAL_CHARGE: Color = Color(1.6, 1.6, 1.6)
-const CRYSTAL_DASH: Color = Color(2.2, 2.2, 2.2)
-const CRYSTAL_STUNNED: Color = Color(0.45, 0.45, 0.45)
-const CRYSTAL_BLINK_INTERVAL: float = 0.1
+## Velocidade horizontal real abaixo da qual o inimigo é considerado parado (idle em vez de walk).
+const WALK_MIN_SPEED: float = 1.0
+
+const ANIM_IDLE: StringName = &"idle"
+const ANIM_WALK: StringName = &"walk"
+const ANIM_CHARGE: StringName = &"charge"
+const ANIM_ATTACK: StringName = &"attack"
+const ANIM_HIT: StringName = &"hit"
+const ANIM_STUNNED: StringName = &"stunned"
+const ANIM_DEATH: StringName = &"death"
+
 ## Clarões provisórios (Visuals.modulate) dos golpes na carapaça: com dano reduzido, um clarão
 ## lilás no lugar do branco normal; absorvido (0 de dano), um clarão curto cinza-arroxeado.
 const SHELL_HIT_COLOR: Color = Color(1.5, 1.3, 2.0)
@@ -75,15 +80,12 @@ var _turn_after_idle: bool = false
 var _patrol_origin_x: float = 0.0
 var _detected_target: Node2D
 var _cooldown_left: float = 0.0
-## Tempo desde o início de CHARGE (só para o piscar dos cristais).
-var _charge_elapsed: float = 0.0
 var _react_left: float = 0.0
 
 @onready var _detection_area: Area2D = $Visuals/DetectionArea
 @onready var _carapace: CarapaceHurtbox = $Hurtbox
 @onready var _melee_attack: MeleeAttack = $MeleeAttack
 @onready var _hitbox: Hitbox = $Visuals/Hitbox
-@onready var _state_tint: CanvasItem = $Visuals/AnimatedSprite2D
 
 
 func _ready() -> void:
@@ -132,7 +134,7 @@ func _physics_process(delta: float) -> void:
 	# A reação a um golpe tem prioridade sobre a detecção: não inicia o ataque enquanto dura.
 	if not reacting:
 		_try_start_charge()
-	_update_state_tint()
+	_update_animation(reacting)
 
 
 func get_state() -> State:
@@ -176,7 +178,16 @@ func _on_death() -> void:
 	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
 	_hitbox.deactivate()
 	_detection_area.set_deferred("monitoring", false)
-	_state_tint.self_modulate = CRYSTAL_NORMAL
+
+
+## Toca death uma vez e some ao fim dela. Nada reinicia a animação depois: a física (e com ela
+## _update_animation) está desligada e golpes no corpo morto não geram reação nem clarão.
+func _play_death_animation() -> bool:
+	if not _has_animation(ANIM_DEATH):
+		return false
+	_play(ANIM_DEATH, true)
+	_sprite.animation_finished.connect(queue_free, CONNECT_ONE_SHOT)
+	return true
 
 
 ## Clarão do dano aplicado: lilás se o golpe acertou a carapaça, o branco da base nos outros
@@ -198,6 +209,8 @@ func _on_hit_received(damage: int) -> void:
 		return
 	_react_left = hit_react_time
 	velocity.x = 0.0
+	# hit dura o mesmo que a reação (4 quadros a 16 fps = 0,25 s); um novo golpe a recomeça.
+	_play(ANIM_HIT, true)
 	# Vira para quem atacou (contra a trajetória do golpe), se ela for conhecida.
 	var direction: Vector2 = _carapace.get_last_hit_direction()
 	if absf(direction.x) > CarapaceHurtbox.DIRECTION_EPSILON:
@@ -282,7 +295,6 @@ func _try_start_charge() -> void:
 	if absf(dx) > FACE_TARGET_MIN_DX:
 		_set_facing(signf(dx))
 	_state = State.CHARGE
-	_charge_elapsed = 0.0
 	velocity.x = 0.0
 
 
@@ -292,7 +304,6 @@ func _update_charge(delta: float) -> void:
 		_state = State.DASH
 		_update_dash(delta)
 		return
-	_charge_elapsed += delta
 	velocity.x = 0.0
 
 
@@ -337,14 +348,30 @@ func _update_stunned() -> void:
 	_enter_idle(false)
 
 
-func _update_state_tint() -> void:
+## Escolhe a animação do estado no fim de cada tick; o estado manda, a animação só acompanha.
+## charge (6 quadros a 10 fps = 0,6 s), attack e stunned começam do quadro 0 uma vez por entrada
+## no estado (uma animação sem loop que já terminou não recomeça). O fim antecipado do DASH troca
+## attack por stunned no mesmo tick. reacting: a reação ainda valia no início deste tick.
+func _update_animation(reacting: bool) -> void:
+	if _sprite == null:
+		return
 	match _state:
 		State.CHARGE:
-			var lit: bool = int(_charge_elapsed / CRYSTAL_BLINK_INTERVAL) % 2 == 0
-			_state_tint.self_modulate = CRYSTAL_CHARGE if lit else CRYSTAL_NORMAL
+			_start_animation(ANIM_CHARGE)
 		State.DASH:
-			_state_tint.self_modulate = CRYSTAL_DASH
+			_start_animation(ANIM_ATTACK)
 		State.STUNNED:
-			_state_tint.self_modulate = CRYSTAL_STUNNED
-		_:
-			_state_tint.self_modulate = CRYSTAL_NORMAL
+			_start_animation(ANIM_STUNNED)
+		State.IDLE, State.PATROL:
+			if reacting or is_reacting():
+				_start_animation(ANIM_HIT)
+			elif absf(get_real_velocity().x) > WALK_MIN_SPEED:
+				_play(ANIM_WALK)
+			else:
+				_play(ANIM_IDLE)
+
+
+## Começa a animação do quadro 0 só se ela ainda não for a atual.
+func _start_animation(anim: StringName) -> void:
+	if _sprite.animation != anim:
+		_play(anim, true)
