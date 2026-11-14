@@ -8,9 +8,6 @@ enum State { PATROL, CHASE, ATTACK, DEAD }
 
 ## Tolerância de arredondamento na contagem de tempo (ver MeleeAttack).
 const TIME_EPSILON: float = 0.0001
-## Raio de borda: começa um pouco acima dos pés e procura chão um pouco abaixo deles.
-const EDGE_RAY_RISE: float = 4.0
-const EDGE_RAY_DEPTH: float = 8.0
 ## Diferença horizontal mínima para virar na direção do alvo (evita tremer em cima dele).
 const FACE_TARGET_MIN_DX: float = 0.1
 ## Velocidade horizontal real abaixo da qual o inimigo é considerado parado (animação idle).
@@ -63,21 +60,15 @@ var _target: Node2D
 var _cooldown_left: float = 0.0
 var _stun_left: float = 0.0
 var _patrol_origin_x: float = 0.0
-var _half_width: float = 0.0
-var _gravity: float = ProjectSettings.get_setting("physics/2d/default_gravity", 980.0)
 
 @onready var _melee_attack: MeleeAttack = $MeleeAttack
 @onready var _hitbox: Hitbox = $Visuals/Hitbox
 @onready var _detection_area: Area2D = $DetectionArea
-@onready var _sprite: AnimatedSprite2D = get_node_or_null("Visuals/AnimatedSprite2D") as AnimatedSprite2D
 
 
 func _ready() -> void:
 	super()
 	_patrol_origin_x = global_position.x
-	var body_shape: RectangleShape2D = ($CollisionShape2D as CollisionShape2D).shape as RectangleShape2D
-	if body_shape != null:
-		_half_width = body_shape.size.x / 2.0
 
 
 func _physics_process(delta: float) -> void:
@@ -85,7 +76,7 @@ func _physics_process(delta: float) -> void:
 	# Lido antes de descontar: o tick em que o atordoamento termina ainda conta como parado (0,25 s = 15 ticks).
 	var stunned: bool = is_stunned()
 	_stun_left = maxf(_stun_left - delta, 0.0)
-	_apply_gravity(delta)
+	_apply_gravity(delta, max_fall_speed)
 	if stunned:
 		# Atordoado: parado, sem trocar de estado nem iniciar investida.
 		velocity.x = 0.0
@@ -98,7 +89,7 @@ func _physics_process(delta: float) -> void:
 			State.ATTACK:
 				_update_attack(delta)
 	# Nunca sai de uma borda, em nenhum estado.
-	if is_on_floor() and velocity.x != 0.0 and not _has_ground_ahead(signf(velocity.x), absf(velocity.x) * delta):
+	if is_on_floor() and velocity.x != 0.0 and not _has_ground_ahead(signf(velocity.x), absf(velocity.x) * delta, ground_mask):
 		velocity.x = 0.0
 	move_and_slide()
 	if _state == State.PATROL and is_on_wall() and get_wall_normal().x * get_facing() < 0.0:
@@ -108,11 +99,6 @@ func _physics_process(delta: float) -> void:
 
 func get_state() -> State:
 	return _state
-
-
-## Lado para onde olha: 1.0 (direita) ou -1.0 (esquerda).
-func get_facing() -> float:
-	return (_visuals as Node2D).scale.x
 
 
 func get_target() -> Node2D:
@@ -158,12 +144,6 @@ func _on_damaged(amount: int) -> void:
 		_play(ANIM_HIT, true)
 
 
-func _apply_gravity(delta: float) -> void:
-	if is_on_floor():
-		return
-	velocity.y = minf(velocity.y + _gravity * delta, max_fall_speed)
-
-
 func _update_patrol(can_acquire: bool = true) -> void:
 	if can_acquire and _try_acquire_target():
 		_state = State.CHASE
@@ -173,7 +153,7 @@ func _update_patrol(can_acquire: bool = true) -> void:
 	# Fora da área (ou no limite) indo para longe dela: volta.
 	if (offset >= patrol_distance and get_facing() > 0.0) or (offset <= -patrol_distance and get_facing() < 0.0):
 		_set_facing(-get_facing())
-	if is_on_floor() and not _has_ground_ahead(get_facing(), patrol_speed / Engine.physics_ticks_per_second):
+	if is_on_floor() and not _has_ground_ahead(get_facing(), patrol_speed / Engine.physics_ticks_per_second, ground_mask):
 		_set_facing(-get_facing())
 	velocity.x = get_facing() * patrol_speed
 
@@ -219,7 +199,8 @@ func _update_attack(delta: float) -> void:
 ## Adota como alvo um corpo dentro da DetectionArea com linha de visão livre.
 func _try_acquire_target() -> bool:
 	for body: Node2D in _detection_area.get_overlapping_bodies():
-		if global_position.distance_to(body.global_position) <= lose_range and _has_line_of_sight(body):
+		if global_position.distance_to(body.global_position) <= lose_range \
+				and _has_line_of_sight(body, eye_height, target_sight_height, sight_mask):
 			_target = body
 			return true
 	return false
@@ -227,25 +208,6 @@ func _try_acquire_target() -> bool:
 
 func _is_target_valid() -> bool:
 	return is_instance_valid(_target) and not _target.is_queued_for_deletion()
-
-
-func _has_line_of_sight(body: Node2D) -> bool:
-	var query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(
-		global_position + Vector2(0.0, -eye_height),
-		body.global_position + Vector2(0.0, -target_sight_height), sight_mask)
-	return get_world_2d().direct_space_state.intersect_ray(query).is_empty()
-
-
-## Existe chão logo depois da borda frontal, considerando o passo do tick?
-func _has_ground_ahead(direction: float, step: float) -> bool:
-	var x: float = global_position.x + direction * (_half_width + step)
-	var query: PhysicsRayQueryParameters2D = PhysicsRayQueryParameters2D.create(
-		Vector2(x, global_position.y - EDGE_RAY_RISE), Vector2(x, global_position.y + EDGE_RAY_DEPTH), ground_mask)
-	return not get_world_2d().direct_space_state.intersect_ray(query).is_empty()
-
-
-func _set_facing(direction: float) -> void:
-	(_visuals as Node2D).scale.x = direction
 
 
 ## Escolhe a animação do estado atual. O hit, enquanto toca, tem prioridade sobre idle/walk.
@@ -262,24 +224,7 @@ func _update_animation() -> void:
 		return
 	var speed: float = absf(get_real_velocity().x)
 	if speed > WALK_MIN_SPEED:
-		_play(ANIM_WALK)
 		# Passo proporcional à velocidade: fps original na patrulha, dobro na perseguição.
-		_sprite.speed_scale = speed / patrol_speed if patrol_speed > 0.0 else 1.0
+		_play(ANIM_WALK, false, speed / patrol_speed if patrol_speed > 0.0 else 1.0)
 	else:
 		_play(ANIM_IDLE)
-
-
-func _has_animation(anim: StringName) -> bool:
-	return _sprite != null and _sprite.sprite_frames != null and _sprite.sprite_frames.has_animation(anim)
-
-
-## Toca a animação; restart = recomeça do quadro 0 mesmo se já for a atual.
-func _play(anim: StringName, restart: bool = false) -> void:
-	if not _has_animation(anim):
-		return
-	if anim != ANIM_WALK:
-		_sprite.speed_scale = 1.0
-	if restart or _sprite.animation != anim or not _sprite.is_playing():
-		_sprite.play(anim)
-		if restart:
-			_sprite.set_frame_and_progress(0, 0.0)

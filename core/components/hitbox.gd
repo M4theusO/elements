@@ -35,7 +35,7 @@ func _physics_process(_delta: float) -> void:
 		if hurtbox == null or _hit_targets.has(hurtbox):
 			continue
 		_hit_targets.append(hurtbox)
-		hurtbox.receive_hit(damage)
+		hurtbox.receive_hit(damage, get_hit_direction())
 		hit_landed.emit(hurtbox)
 
 
@@ -66,6 +66,14 @@ func deactivate() -> void:
 
 func is_active() -> bool:
 	return _is_active
+
+
+## Trajetória do golpe no mundo (vetor unitário), repassada à Hurtbox atingida.
+## Padrão: eixo x global da hitbox, que acompanha o flip e a rotação dos pais
+## (golpe corpo a corpo dentro de Visuals). Hitboxes que se movem por conta própria
+## (projéteis, ondas) devem sobrescrever com a direção real do movimento.
+func get_hit_direction() -> Vector2:
+	return global_transform.x.normalized()
 
 
 func set_debug_phase(phase: DebugPhase) -> void:

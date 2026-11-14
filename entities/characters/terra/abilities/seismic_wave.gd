@@ -82,6 +82,11 @@ func get_traveled_distance() -> float:
 	return _traveled
 
 
+## A onda é top_level e não vira pela escala: a direção do golpe é a do deslocamento.
+func get_hit_direction() -> Vector2:
+	return Vector2(_direction, 0.0)
+
+
 ## Verifica a posição futura: parede entre a borda já verificada e a nova borda frontal,
 ## ou ausência de chão sob o novo centro (buraco/borda).
 func _is_blocked(next_position: Vector2) -> bool:

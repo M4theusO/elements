@@ -56,6 +56,19 @@ func is_busy() -> bool:
 	return _phase != Phase.READY
 
 
+## Encerra a fase ativa antes do tempo (ex.: investida que bate numa parede): desliga a
+## Hitbox na hora e começa a recuperação completa a partir deste tick. Só age na fase ativa;
+## na preparação, na recuperação ou pronto não faz nada (nunca adianta nem liga a hitbox).
+## Retorna se a fase ativa foi encerrada.
+func finish_active() -> bool:
+	if _phase != Phase.ACTIVE:
+		return false
+	_phase = Phase.RECOVERY
+	_phase_time_left = attack.recovery_time
+	hitbox.deactivate()
+	return true
+
+
 func _advance_phase() -> void:
 	match _phase:
 		Phase.WINDUP:
