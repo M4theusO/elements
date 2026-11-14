@@ -89,6 +89,10 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `world/levels/depths/backgrounds/`: `depths_parallax.tscn` (3 `Parallax2D`), `depths_bg_far/mid/near.png` e `depths_bg_palette.png` (12 cores). Instância `Background` na sala de teste, antes do `Terrain`.
   - `tests/levels/depths_parallax_test.gd` (97 verificações: imagens, paleta, alfa, pixel inteiro, zonas, emendas, importação, cena sem colisões/scripts, ligação com a sala, cobertura real da tela na sala e em salas maiores, configurações gráficas). Executar: `godot --headless --path . -s res://tests/levels/depths_parallax_test.gd`.
   - Fontes (imagens de IA), conversão, prévias e instalação fora do projeto, em `Desktop\sprites\fase_terra\parallax_build\` (README; processo determinístico).
+- **Reino das Profundezas: props decorativos, grupo 1 (cristais) — validado manualmente e commitado.** Ver seção 9, "Cenário".
+  - `world/props/depths/`: `depths_props_palette.png` (24 cores) e `crystals/` (4 PNGs + 4 cenas `Sprite2D`). Nó `Props` na sala de teste com 8 cristais.
+  - `tests/props/depths_crystals_test.gd` (91 verificações: paleta, imagens, âncoras, importação, cenas sem script/colisão, uso na sala, apoio real no terreno, regras de posicionamento, preservação). Executar: `godot --headless --path . -s res://tests/props/depths_crystals_test.gd`.
+  - Ordem de desenho confirmada com capturas reais (onda sísmica `top_level`, Terra e Fragmento Vivo por cima dos cristais). Fontes, conversão, prévias, instalação e capturas fora do projeto, em `Desktop\sprites\fase_terra\props_build\` (README).
 
 **Pendente / próximos passos possíveis:**
 - Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
@@ -98,7 +102,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - **Segundo inimigo, Escavador de Cristal (planejamento aprovado em 2026-11-14; 6 etapas):** etapa 1 (base compartilhada: helpers em `Enemy`, direção do golpe, gancho de dano, `finish_active()`) commitada (`73f0b2d`); etapa 2 (cena base, IDLE/PATROL, detecção frontal, visual provisório) implementada e commitada (`fcd22a0`); etapa 3 (CHARGE → DASH → STUNNED, recarga) validada manualmente e commitada (`69c8aa2`); etapa 4 (carapaça, dano direcional, reação a golpes) validada manualmente e commitada (`fa7452e`); etapa 5A (sprite idle integrado) validada manualmente e commitada; próxima: etapa 5B (demais animações), aguardando aprovação. Ver seção 9, "Inimigos".
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
-- Reino das Profundezas: props (a referência tem pilares, arco, caixotes, lanterna, cristais, plantas), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
+- Reino das Profundezas: props, grupos 2–4 (vegetação, rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -380,7 +384,21 @@ Linhas = quem procura (mask); colunas = layer do alvo.
   - Zona central limpa: em y 96–288 a camada próxima ocupa no máximo 5% (hoje 3,2%) e a intermediária no máximo 40% (hoje 23%).
   - Arte: imagens de IA tileáveis na largura inteira, convertidas para a grade real da arte (213x90, 185x60, 176x60 pixels) e ampliadas por fator inteiro (x4/x6). Por isso o fundo tem pixels maiores que o terreno e os personagens (1 px), escolha aprovada. Larguras = largura inteira da arte original, para manter a emenda natural (sem corte nem reparo).
   - Reconstrução e instalação: `Desktop\sprites\fase_terra\parallax_build\` (README). `build_scene.gd` sobrescreve `depths_parallax.tscn`.
-- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Background` (fundo com parallax), `Terrain`, `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
+- **Props decorativos** (`world/props/depths/`): só visuais, sem colisões, dano, scripts ou animação; uma cena por prop (raiz `Sprite2D`, `centered` desligado, `offset` = âncora, filtro herdado, Lossless sem mipmaps), uma pasta por grupo. Gerados por IA e convertidos por script fora do projeto (`Desktop\sprites\fase_terra\props_build\`, README).
+  - **Âncora:** props de chão no centro da base (`offset` (−w/2, −h)), pendentes no centro do topo (`offset` (−w/2, 0)). A base (ou o topo) real da rocha fica na última (ou primeira) linha da PNG e o desenho é centrado na largura em pixels inteiros. Com a grade do editor em 8 ou 16 px, o prop encaixa na borda do tile.
+  - **Na sala:** nó `Props` (`Node2D`) entre `Terrain` e `Enemies` (ordem: `Background`, `Terrain`, `Props`, `Enemies`, `Terra`). Ninguém usa `z_index`, então a ordem na árvore põe Terra, inimigos e golpes por cima (a onda sísmica, que é `top_level`, também; conferido com quadro renderizado). Instâncias só sobrescrevem a posição, como o resto da sala.
+  - **Regras de posicionamento:** cristais pequenos perto do caminho; médios em bordas e áreas secundárias; grandes junto a paredes ou em lugares pouco percorridos, nunca no chão ou nos degraus do caminho principal (trajeto da onda sísmica); pendentes presos ao teto; nenhum prop alto no início da Terra; nenhum pixel dentro de tiles sólidos.
+  - **Paleta dos props** (`depths_props_palette.png`, 24 cores): as 17 do terreno + `#8a3a10 #ffc85a #fff1c2` (âmbar) + `#2a2628 #47403d #6b625b #958a7e` (pedra das ruínas, para os próximos grupos).
+  - **Cristais** (`crystals/`, 10 cores: contorno `#130f12`; rocha `#221817 #43261d #5a3321 #794526 #98592c`; cristal `#8a3a10 #fb9524 #ffc85a #fff1c2`):
+    | Cena (raiz) | Caixa | Arte | `offset` |
+    |---|---|---|---|
+    | `crystal_small` (`CrystalSmall`) | 16x24 | 16x17 | (−8, −24) |
+    | `crystal_medium` (`CrystalMedium`) | 32x32 | 30x31 | (−16, −32) |
+    | `crystal_large` (`CrystalLarge`) | 48x56 | 48x53 | (−24, −56) |
+    | `crystal_ceiling` (`CrystalCeiling`, pendente) | 40x48 | 34x44 | (−20, 0) |
+  - A folha da IA tinha pixels de arte não quadrados (~7,44 x 6,60 px); a conversão leva 1 pixel de arte a 1 pixel quadrado, sem redimensionar por fração, então os cristais ficaram ~12% mais altos que na folha (aprovado). Contornos em `#130f12` e `#221817` e pixels isolados da arte foram preservados.
+  - Catálogo aprovado para os próximos grupos (implementados um de cada vez): vegetação (`moss_tuft`, `moss_hanging`, `root_short`, `root_long`, `fungi_small`, `fungi_tall`), rochas (`pebbles`, `boulder`, `stalagmite_small/large`, `stalactite`, `crack_small/large`), ruínas (`pillar_broken_short/tall`, `pillar_fallen`, `carved_stone`, `carved_fragment`).
+- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Background` (fundo com parallax), `Terrain`, `Props` (8 cristais: grande sobre o bloco flutuante, médios sobre a faixa e no canto direito, pequenos no chão, no primeiro degrau e ao pé do terceiro, dois pendentes no teto), `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
 
 ### A definir
 

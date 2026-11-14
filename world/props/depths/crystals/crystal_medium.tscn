@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://world/props/depths/crystals/crystal_medium.png" id="1_4u5fh"]
+
+[node name="CrystalMedium" type="Sprite2D" unique_id=930542759]
+texture = ExtResource("1_4u5fh")
+centered = false
+offset = Vector2(-16, -32)
