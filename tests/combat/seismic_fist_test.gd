@@ -20,7 +20,10 @@ const COOLDOWN_TICKS: int = 90
 const WAVE_STEP: float = 4.0
 const WAVE_RANGE: float = 96.0
 const SPAWN_OFFSET: float = 12.0
-const WAVE_HALF_WIDTH: float = 8.0
+const WAVE_HALF_WIDTH: float = 16.0
+## Animação da onda: 6 quadros a 15 FPS = 0,4 s = 96 px / 240 px/s.
+const WAVE_FRAMES: int = 6
+const WAVE_FPS: float = 15.0
 
 var _failures: int = 0
 var _checks: int = 0
@@ -95,9 +98,25 @@ func _check_static_configuration() -> void:
 	_check(wave.collision_layer == 0 and wave.collision_mask == 32, "onda: layer nenhuma | mask enemy_hurtbox (6)")
 	_check(wave.wall_mask == 1 and wave.ground_mask == 3, "raios: paredes = world; chão = world + platforms")
 	var shape: CollisionShape2D = wave.get_node("CollisionShape2D") as CollisionShape2D
-	_check((shape.shape as RectangleShape2D).size == Vector2(16, 12) and shape.position == Vector2(0, -6),
-		"onda 16x12 com a base na origem")
+	_check((shape.shape as RectangleShape2D).size == Vector2(32, 16) and shape.position == Vector2(0, -8),
+		"onda 32x16 com a base na origem")
 	_check(not wave.monitoring and not wave.monitorable, "onda começa desativada")
+	_check(not wave.show_debug, "onda sem desenho de depuração")
+	var sprite: AnimatedSprite2D = wave.get_node_or_null("AnimatedSprite2D") as AnimatedSprite2D
+	_check(sprite != null and not sprite.visible and not sprite.centered and sprite.offset == Vector2(-40, -40),
+		"sprite começa invisível, base do quadro 80x40 na origem")
+	var frames: SpriteFrames = sprite.sprite_frames if sprite != null else null
+	var anim: StringName = SeismicWave.ANIM_WAVE
+	var format_ok: bool = frames != null and frames.has_animation(anim) and frames.get_frame_count(anim) == WAVE_FRAMES \
+		and is_equal_approx(frames.get_animation_speed(anim), WAVE_FPS) and not frames.get_animation_loop(anim)
+	if format_ok:
+		for i: int in WAVE_FRAMES:
+			var atlas: AtlasTexture = frames.get_frame_texture(anim, i) as AtlasTexture
+			format_ok = format_ok and atlas != null and atlas.region == Rect2(i * 80, 0, 80, 40) \
+				and atlas.atlas.resource_path.ends_with("terra_seismic_wave.png") \
+				and is_equal_approx(frames.get_frame_duration(anim, i), 1.0)
+	_check(format_ok, "wave: 6 quadros 80x40 de terra_seismic_wave.png, 15 FPS, sem loop")
+	_check(is_equal_approx(WAVE_FRAMES / WAVE_FPS, WAVE_RANGE / 240.0), "animação dura o mesmo que o percurso (0,4 s)")
 	wave.free()
 
 
@@ -110,17 +129,25 @@ func _test_activation_and_timing() -> void:
 	_check(_fist.is_casting(), "L no chão inicia a preparação")
 	var waves: Array[SeismicWave] = _waves()
 	_check(waves.size() == 1 and not waves[0].is_launched() and not waves[0].is_active(),
-		"aviso da onda criado, ainda sem causar dano")
+		"onda pendente criada, ainda sem causar dano")
+	var hidden_while_casting: bool = true
 	var casting_ticks: int = 0
 	while _fist.is_casting() and casting_ticks < 60:
+		hidden_while_casting = hidden_while_casting and not _wave_sprite(waves[0]).visible
 		casting_ticks += 1
 		await physics_frame
+	_check(hidden_while_casting, "nada visível na preparação (sem aviso)")
 	_check(casting_ticks == WINDUP_TICKS, "preparação: %d ticks (esperado %d)" % [casting_ticks, WINDUP_TICKS])
 	waves = _waves()
 	_check(waves.size() == 1 and waves[0].is_launched() and waves[0].is_active(), "onda liberada e ativa após a preparação")
+	var sprite: AnimatedSprite2D = _wave_sprite(waves[0])
+	_check(sprite.visible and sprite.is_playing() and sprite.animation == SeismicWave.ANIM_WAVE and sprite.frame <= 1
+		and not sprite.flip_h, "na liberação: animação wave visível, do início, sem flip (quadro %d)" % sprite.frame)
 	var result: Dictionary = await _follow_wave(waves[0])
 	_check(is_equal_approx(result.traveled, WAVE_RANGE), "onda percorre exatamente %.0f px (%.1f)" % [WAVE_RANGE, result.traveled])
 	_check(absf(result.end_x - (60.0 + SPAWN_OFFSET + WAVE_RANGE)) < 0.5, "onda termina em x=%.1f (esperado %.1f)" % [result.end_x, 60.0 + SPAWN_OFFSET + WAVE_RANGE])
+	_check(result.last_frame == WAVE_FRAMES - 1, "animação chega ao último quadro (%d)" % result.last_frame)
+	_check(result.linger_ticks <= 3, "no fim do alcance some junto com a animação (%d ticks parada)" % result.linger_ticks)
 	_check(_waves().is_empty(), "onda removida ao completar o alcance")
 	await _wait_cooldown()
 
@@ -129,7 +156,8 @@ func _test_range_and_damage() -> void:
 	print("-- Alcance e dano")
 	await _reset(Vector2(60.0, FLOOR_Y), 1.0)
 	var near: Node2D = _spawn_dummy(60.0 + 90.0)
-	var far: Node2D = _spawn_dummy(60.0 + 130.0)
+	# Alcance da borda frontal: 12 + 96 + 16 = 124 px; o boneco tem 16 px de largura.
+	var far: Node2D = _spawn_dummy(60.0 + 150.0)
 	var damaged_count: Array[int] = [0]
 	(near.get_node("HealthComponent") as HealthComponent).damaged.connect(func(_a: int) -> void: damaged_count[0] += 1)
 	var near_hurtbox: Hurtbox = near.get_node("Hurtbox") as Hurtbox
@@ -142,7 +170,7 @@ func _test_range_and_damage() -> void:
 			overlap_ticks += 1
 		await physics_frame
 	_check(_hp(near) == 1, "inimigo a 90 px recebe 2 de dano (vida %d)" % _hp(near))
-	_check(_hp(far) == 3, "inimigo a 130 px está fora do alcance (vida %d)" % _hp(far))
+	_check(_hp(far) == 3, "inimigo a 150 px está fora do alcance (vida %d)" % _hp(far))
 	_check(damaged_count[0] == 1 and overlap_ticks >= 3,
 		"um único dano apesar de %d ticks de sobreposição" % overlap_ticks)
 	for dummy: Node2D in [near, far]:
@@ -166,9 +194,10 @@ func _test_direction() -> void:
 	await _reset(Vector2(220.0, FLOOR_Y), -1.0)
 	var front: Node2D = _spawn_dummy(220.0 - 90.0)
 	var back: Node2D = _spawn_dummy(220.0 + 25.0)
-	var far: Node2D = _spawn_dummy(220.0 - 130.0)
+	var far: Node2D = _spawn_dummy(220.0 - 150.0)
 	await _press("ability")
 	await _wait_until_released()
+	_check(_wave_sprite(_waves()[0]).flip_h, "olhando para a esquerda: sprite da onda espelhado")
 	var result: Dictionary = await _follow_wave(_waves()[0])
 	# _follow_wave começa a observar após o primeiro passo (a onda anda no tick da liberação).
 	_check(result.end_x < result.start_x and absf(result.end_x - (220.0 - SPAWN_OFFSET - WAVE_RANGE)) < 0.5,
@@ -220,11 +249,11 @@ func _test_global_position_while_moving() -> void:
 		var follows: bool = true
 		var wave: SeismicWave = _waves()[0]
 		while _fist.is_casting():
-			# O aviso acompanha a frente da Terra (até 1 tick de deslocamento de diferença).
+			# A onda pendente acompanha a frente da Terra (até 1 tick de deslocamento de diferença).
 			var expected: float = _terra.global_position.x + facing * SPAWN_OFFSET
 			follows = follows and absf(wave.global_position.x - expected) <= 2.0 and wave.global_position.y == _terra.global_position.y
 			await physics_frame
-		_check(follows, "%s: aviso acompanha a frente da Terra andando" % side)
+		_check(follows, "%s: onda pendente acompanha a frente da Terra andando" % side)
 		# Libera, e a Terra passa a andar no sentido oposto.
 		Input.action_release(walk)
 		Input.action_press(back_action)
@@ -323,7 +352,10 @@ func _test_walls() -> void:
 	await _wait_until_released()
 	var result: Dictionary = await _follow_wave(_waves()[0])
 	_check(result.max_front <= 400.0 + 0.01, "onda não passa da parede do Step1 (borda frontal máx. %.1f)" % result.max_front)
-	_check(result.traveled < WAVE_RANGE, "onda some ao bater na parede (percorreu %.0f px)" % result.traveled)
+	_check(result.traveled < WAVE_RANGE, "onda para ao bater na parede (percorreu %.0f px)" % result.traveled)
+	_check(result.linger_ticks >= 5 and not result.moved_after_stop and not result.active_after_stop
+		and result.last_frame == WAVE_FRAMES - 1,
+		"parada na parede: sem dano nem movimento, termina a animação (%d ticks) e some" % result.linger_ticks)
 	_check(_hp(before_wall) == 1 and _hp(behind_wall) == 3, "acerta antes da parede, não atrás dela (%d, %d)" % [_hp(before_wall), _hp(behind_wall)])
 	before_wall.queue_free()
 	behind_wall.queue_free()
@@ -384,7 +416,7 @@ func _test_one_way_platform() -> void:
 	await _wait_cooldown()
 
 	await _reset(Vector2(1050.0, PLATFORM_TOP_Y), 1.0)
-	var past_edge: Node2D = _spawn_dummy(1110.0, PLATFORM_TOP_Y)
+	var past_edge: Node2D = _spawn_dummy(1120.0, PLATFORM_TOP_Y)
 	await _press("ability")
 	await _wait_until_released()
 	result = await _follow_wave(_waves()[0])
@@ -621,16 +653,30 @@ func _is_alive(node: Variant) -> bool:
 	return is_instance_valid(node) and not (node as Node).is_queued_for_deletion()
 
 
-## Acompanha a onda até ela sumir; registra posições extremas e distância percorrida.
+func _wave_sprite(wave: SeismicWave) -> AnimatedSprite2D:
+	return wave.get_node("AnimatedSprite2D") as AnimatedSprite2D
+
+
+## Acompanha a onda até ela sumir; registra posições extremas, distância percorrida
+## e o que acontece depois que ela para (ticks parada, movimento, dano, último quadro).
 func _follow_wave(wave: SeismicWave) -> Dictionary:
 	var direction: float = 0.0
 	var result: Dictionary = {
 		"start_x": wave.global_position.x, "end_x": wave.global_position.x,
 		"max_center": wave.global_position.x, "min_center": wave.global_position.x,
 		"max_front": -INF, "traveled": 0.0, "ticks": 0,
+		"linger_ticks": 0, "moved_after_stop": false, "active_after_stop": false, "last_frame": -1,
 	}
+	var stop_x: float = NAN
 	while _is_alive(wave):
 		var x: float = wave.global_position.x
+		result.last_frame = _wave_sprite(wave).frame
+		if not wave.is_launched():
+			if is_nan(stop_x):
+				stop_x = x
+			result.linger_ticks += 1
+			result.moved_after_stop = result.moved_after_stop or x != stop_x
+			result.active_after_stop = result.active_after_stop or wave.is_active()
 		if direction == 0.0 and x != result.start_x:
 			direction = signf(x - result.start_x)
 		result.end_x = x

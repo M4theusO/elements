@@ -3,9 +3,12 @@ extends Hitbox
 ## Onda do Punho Sísmico: uma Hitbox que percorre o chão depois de liberada.
 ## Usa top_level (definido na cena) para ficar no espaço do mundo, independente da Terra.
 ## Origem da cena = base da onda, na altura dos pés.
-## Antes de launch() é apenas o aviso visual da preparação (não causa dano).
+## Antes de launch() fica invisível e sem dano, só acompanhando a frente da Terra.
 ## Uma única ativação por onda: cada Hurtbox é atingida no máximo uma vez.
+## Ao parar (alcance, parede ou borda) o dano acaba na hora; a animação termina
+## no lugar e só então a onda some.
 
+const ANIM_WAVE: StringName = &"wave"
 ## Altura (acima da base) do raio que procura paredes à frente.
 const WALL_RAY_HEIGHT: float = 6.0
 ## Extensão vertical do raio que procura chão sob a próxima posição.
@@ -25,6 +28,8 @@ var _traveled: float = 0.0
 var _checked_front_x: float = 0.0
 var _half_width: float = 0.0
 
+@onready var _sprite: AnimatedSprite2D = $AnimatedSprite2D
+
 
 func _ready() -> void:
 	super()
@@ -32,7 +37,6 @@ func _ready() -> void:
 		var shape_node: CollisionShape2D = child as CollisionShape2D
 		if shape_node != null and shape_node.shape is RectangleShape2D:
 			_half_width = (shape_node.shape as RectangleShape2D).size.x / 2.0
-	set_debug_phase(DebugPhase.WINDUP)
 
 
 func _physics_process(delta: float) -> void:
@@ -64,6 +68,10 @@ func launch(direction: float, speed: float, max_range: float, wave_damage: int, 
 	_checked_front_x = origin_x
 	_launched = true
 	activate()
+	# A arte olha para a direita.
+	_sprite.flip_h = _direction < 0.0
+	_sprite.visible = true
+	_sprite.play(ANIM_WAVE)
 
 
 func is_launched() -> bool:
@@ -92,4 +100,8 @@ func _is_blocked(next_position: Vector2) -> bool:
 func _finish() -> void:
 	_launched = false
 	deactivate()
-	queue_free()
+	# Bloqueada já no primeiro passo (nasceria dentro de uma parede): nada a mostrar.
+	if is_zero_approx(_traveled) or not _sprite.is_playing():
+		queue_free()
+	else:
+		_sprite.animation_finished.connect(queue_free, CONNECT_ONE_SHOT)

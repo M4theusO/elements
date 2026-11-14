@@ -21,7 +21,7 @@ var _is_casting: bool = false
 var _windup_left: float = 0.0
 var _cooldown_left: float = 0.0
 var _direction: float = 1.0
-## Onda em preparação (aviso visual). Após a liberação, a onda cuida de si mesma.
+## Onda em preparação (invisível, sem dano). Após a liberação, a onda cuida de si mesma.
 var _pending_wave: SeismicWave
 
 @onready var _character: PlayerCharacter = get_parent() as PlayerCharacter
@@ -60,6 +60,11 @@ func try_activate() -> bool:
 
 func is_casting() -> bool:
 	return _is_casting
+
+
+func cancel() -> void:
+	if _is_casting:
+		_cancel()
 
 
 func _wave_start_position() -> Vector2:

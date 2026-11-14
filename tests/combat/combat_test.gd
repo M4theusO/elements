@@ -84,7 +84,7 @@ func _check_static_configuration() -> void:
 		and is_equal_approx(data.recovery_time, 0.22), "ataque da Terra: dano 1, tempos 0,08 / 0,10 / 0,22 s")
 	_check(melee.hitbox == hitbox, "MeleeAttack referencia Visuals/Hitbox")
 	_check(hitbox.collision_layer == 0 and hitbox.collision_mask == 32, "Hitbox: layer nenhuma | mask enemy_hurtbox (6)")
-	_check(not hitbox.monitoring and not hitbox.monitorable and hitbox.show_debug, "Hitbox começa desativada, show_debug ligado")
+	_check(not hitbox.monitoring and not hitbox.monitorable and not hitbox.show_debug, "Hitbox começa desativada, sem desenho de depuração")
 	var hit_shape: CollisionShape2D = hitbox.get_node("CollisionShape2D") as CollisionShape2D
 	_check((hit_shape.shape as RectangleShape2D).size == Vector2(20, 16) and hit_shape.position == Vector2(18, -28),
 		"Hitbox da Terra 20x16 em (18,-28)")

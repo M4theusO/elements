@@ -530,6 +530,85 @@ func _test_terra_zero_health() -> void:
 	await _wait(180)
 	_check(_hp(terra) == 0 and damaged[0] == 1 and deaths[0] == 1 and fragment.get_state() != LivingFragment.State.DEAD,
 		"investidas do Fragmento também não causam dano")
+	await _test_terra_death()
+
+
+func _test_terra_death() -> void:
+	print("-- Morte da Terra")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var terra: PlayerCharacter = await _spawn_terra(START_X, 1.0)
+	var sprite: AnimatedSprite2D = terra.get_node("Visuals/AnimatedSprite2D") as AnimatedSprite2D
+	var frames: SpriteFrames = sprite.sprite_frames
+	var anim: StringName = PlayerCharacter.ANIM_DEATH
+	var format_ok: bool = frames.has_animation(anim) and frames.get_frame_count(anim) == 6 \
+		and is_equal_approx(frames.get_animation_speed(anim), 8.0) and not frames.get_animation_loop(anim)
+	if format_ok:
+		for i: int in 6:
+			var atlas: AtlasTexture = frames.get_frame_texture(anim, i) as AtlasTexture
+			format_ok = format_ok and atlas != null and atlas.region == Rect2(i * 64, 0, 64, 64) \
+				and atlas.atlas.resource_path.ends_with("terra_death.png")
+	_check(format_ok, "death: 6 quadros 64x64 de terra_death.png, 8 fps, sem loop")
+
+	# Morte durante a preparação do Punho Sísmico: sem onda e sem dano.
+	var melee: MeleeAttack = terra.get_node("MeleeAttack") as MeleeAttack
+	var fist: SeismicFist = terra.get_node("SeismicFist") as SeismicFist
+	var fragment: LivingFragment = _spawn_fragment(START_X + 30.0)
+	fragment.process_mode = Node.PROCESS_MODE_DISABLED
+	await _press("ability")
+	_check(fist.is_casting(), "Punho Sísmico em preparação antes da morte")
+	terra.get_hurtbox().receive_hit(10)
+	await physics_frame
+	_check(not fist.is_casting() and sprite.animation == anim and sprite.is_playing(), "morre: cancela a habilidade e toca death")
+	await _wait(30)
+	var waves: int = 0
+	for child: Node in terra.get_children():
+		if child is SeismicWave and _is_alive(child):
+			waves += 1
+	_check(waves == 0 and _hp(fragment) == 3, "nenhuma onda nasce depois da morte")
+
+	# Sem controle: movimento, pulo, golpe e habilidade ignorados.
+	var x_before: float = terra.global_position.x
+	Input.action_press("move_right")
+	Input.action_press("jump")
+	await _wait(20)
+	_release_all()
+	await _press("attack")
+	await _press("ability")
+	_check(is_equal_approx(terra.global_position.x, x_before) and terra.is_on_floor()
+		and not melee.is_busy() and not fist.is_casting(), "morta: ignora andar, pular, golpear e a habilidade")
+	await _wait(60)
+	_check(sprite.animation == anim and not sprite.is_playing() and sprite.frame == 5
+		and is_equal_approx(sprite.self_modulate.a, 1.0), "fica caída no último quadro, sem piscar")
+
+	# Morte durante o golpe: a hitbox não liga depois da morte.
+	await _new_world()
+	_floor(0.0, 1000.0)
+	terra = await _spawn_terra(START_X, 1.0)
+	melee = terra.get_node("MeleeAttack") as MeleeAttack
+	var hitbox: Hitbox = terra.get_node("Visuals/Hitbox") as Hitbox
+	await _press("attack")
+	terra.get_hurtbox().receive_hit(10)
+	var active_after: int = 0
+	for i: int in 30:
+		await physics_frame
+		if hitbox.is_active():
+			active_after += 1
+	_check(active_after == 0, "golpe interrompido: hitbox não liga depois da morte")
+
+	# Morte no ar: cai até o chão e desacelera até parar.
+	await _new_world()
+	_floor(0.0, 1000.0)
+	terra = await _spawn_terra(START_X, 1.0)
+	Input.action_press("move_right")
+	await _wait(20)
+	Input.action_press("jump")
+	await _wait(8)
+	_release_all()
+	_check(not terra.is_on_floor(), "no ar antes da morte")
+	terra.get_hurtbox().receive_hit(10)
+	await _wait_until(func() -> bool: return terra.is_on_floor() and is_zero_approx(terra.velocity.x), 180)
+	_check(terra.is_on_floor() and is_zero_approx(terra.velocity.x), "morta no ar: cai e para no chão")
 
 
 func _test_invulnerability_keeps_controls() -> void:

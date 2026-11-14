@@ -1,7 +1,8 @@
 class_name PlayerCharacter
 extends CharacterBody2D
 ## Base compartilhada pelos protagonistas: movimento horizontal, gravidade, pulo, ataque básico
-## e vida (HealthComponent + Hurtbox com invulnerabilidade após dano).
+## e vida (HealthComponent + Hurtbox com invulnerabilidade após dano). Em 0 de vida, perde o
+## controle e toca a animação death.
 ## Todos os parâmetros vêm de um CharacterStats; cada personagem fornece o seu.
 ## O golpe (dados e alcance) é configurado na cena de cada personagem, em MeleeAttack e Visuals/Hitbox.
 
@@ -12,6 +13,7 @@ const ANIM_JUMP: StringName = &"jump"
 const ANIM_FALL: StringName = &"fall"
 const ANIM_ATTACK: StringName = &"attack"
 const ANIM_ABILITY: StringName = &"ability"
+const ANIM_DEATH: StringName = &"death"
 ## Velocidade horizontal mínima (px/s) para considerar que o personagem está andando.
 const WALK_SPEED_THRESHOLD: float = 1.0
 ## Feedback de dano (provisório): clarão no acerto e sprite piscando durante a invulnerabilidade.
@@ -29,6 +31,7 @@ var _jump_buffer_timer: float = 0.0
 ## Verdadeiro enquanto sobe por causa de um pulo (permite o corte do pulo variável).
 var _is_jump_rising: bool = false
 var _damage_flash_tween: Tween
+var _is_dead: bool = false
 
 @onready var _visuals: Node2D = $Visuals
 @onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
@@ -42,16 +45,25 @@ func _ready() -> void:
 		push_warning("%s: nenhum CharacterStats atribuído; usando valores padrão." % name)
 		stats = CharacterStats.new()
 	_health.damaged.connect(_on_damaged)
+	_health.died.connect(_on_died)
 
 
 func _process(_delta: float) -> void:
 	# Apenas visual: não interfere em movimento, pulo, golpe ou habilidade.
+	# Morta, não pisca: a animação de morte fica sempre visível.
 	var left: float = _hurtbox.get_invulnerability_left()
-	var hidden_phase: bool = left > 0.0 and int(left / INVULNERABLE_BLINK_INTERVAL) % 2 == 0
+	var hidden_phase: bool = not _is_dead and left > 0.0 and int(left / INVULNERABLE_BLINK_INTERVAL) % 2 == 0
 	_sprite.self_modulate.a = INVULNERABLE_ALPHA if hidden_phase else 1.0
 
 
 func _physics_process(delta: float) -> void:
+	if _is_dead:
+		# Sem controle: só a gravidade e a desaceleração natural até parar.
+		_apply_gravity(delta)
+		_apply_horizontal_movement(0.0, delta)
+		move_and_slide()
+		return
+
 	var direction: float = Input.get_axis("move_left", "move_right")
 
 	_update_timers(delta)
@@ -99,6 +111,18 @@ func _on_damaged(_amount: int) -> void:
 	_visuals.modulate = DAMAGE_FLASH_COLOR
 	_damage_flash_tween = create_tween()
 	_damage_flash_tween.tween_property(_visuals, "modulate", Color.WHITE, DAMAGE_FLASH_DURATION)
+
+
+## Sem respawn por enquanto: a personagem fica caída no último quadro de death.
+func _on_died() -> void:
+	_is_dead = true
+	_is_jump_rising = false
+	# Um golpe ou habilidade em preparação não pode causar dano depois da morte.
+	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
+	_melee_attack.hitbox.deactivate()
+	if ability != null:
+		ability.cancel()
+	_play_animation(ANIM_DEATH)
 
 
 func _is_ability_casting() -> bool:

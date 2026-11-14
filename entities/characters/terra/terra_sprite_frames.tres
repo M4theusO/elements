@@ -6,6 +6,7 @@
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_fall.png" id="4_fall"]
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_attack.png" id="5_attack"]
 [ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_seismic_fist.png" id="6_ability"]
+[ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_death.png" id="7_death"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_idle_0"]
 atlas = ExtResource("1_idle")
@@ -90,6 +91,30 @@ region = Rect2(128, 0, 64, 64)
 [sub_resource type="AtlasTexture" id="AtlasTexture_ability_3"]
 atlas = ExtResource("6_ability")
 region = Rect2(192, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_0"]
+atlas = ExtResource("7_death")
+region = Rect2(0, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_1"]
+atlas = ExtResource("7_death")
+region = Rect2(64, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_2"]
+atlas = ExtResource("7_death")
+region = Rect2(128, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_3"]
+atlas = ExtResource("7_death")
+region = Rect2(192, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_4"]
+atlas = ExtResource("7_death")
+region = Rect2(256, 0, 64, 64)
+
+[sub_resource type="AtlasTexture" id="AtlasTexture_death_5"]
+atlas = ExtResource("7_death")
+region = Rect2(320, 0, 64, 64)
 
 [resource]
 animations = [{
@@ -185,4 +210,27 @@ animations = [{
 "loop": false,
 "name": &"ability",
 "speed": 60.0
+}, {
+"frames": [{
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_0")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_1")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_2")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_3")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_4")
+}, {
+"duration": 1.0,
+"texture": SubResource("AtlasTexture_death_5")
+}],
+"loop": false,
+"name": &"death",
+"speed": 8.0
 }]
