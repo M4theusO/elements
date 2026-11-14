@@ -3,6 +3,7 @@
 [ext_resource type="PackedScene" path="res://entities/characters/terra/terra.tscn" id="1_bw7t0"]
 [ext_resource type="PackedScene" path="res://entities/enemies/training_dummy/training_dummy.tscn" id="2_dummy"]
 [ext_resource type="PackedScene" path="res://entities/enemies/living_fragment/living_fragment.tscn" id="3_fragment"]
+[ext_resource type="PackedScene" path="res://entities/enemies/crystal_burrower/crystal_burrower.tscn" id="4_burrower"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_mat56"]
 size = Vector2(1280, 32)
@@ -133,6 +134,9 @@ position = Vector2(1240, 320)
 
 [node name="LivingFragmentPlatform" parent="." instance=ExtResource("3_fragment")]
 position = Vector2(1024, 272)
+
+[node name="CrystalBurrower" parent="." instance=ExtResource("4_burrower")]
+position = Vector2(1040, 320)
 
 [node name="Terra" parent="." instance=ExtResource("1_bw7t0")]
 position = Vector2(160, 320)

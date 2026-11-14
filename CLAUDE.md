@@ -75,10 +75,11 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - Base `entities/enemies/_shared/enemy.gd` (`Enemy`); `TrainingDummy` migrado para ela (mesmo comportamento).
   - `entities/enemies/living_fragment/` (`LivingFragment`): patrulha, detecção com linha de visão, perseguição, investida, recarga; sprites idle/walk/attack/hit/death (arte original reduzida, quadros 64x48) ligados aos estados. Ver seção 9, "Inimigos".
   - Vida da Terra: `HealthComponent` (5) na cena base do jogador; `Hurtbox` com invulnerabilidade de 0,6 s; feedback visual provisório (clarão + piscar). Morte: perde o controle e toca `death` (fica caída); sem respawn ou HUD.
-  - MovementLab: `LivingFragmentFloor` (x 1240, perto da parede direita) e `LivingFragmentPlatform` (sobre a plataforma one-way).
+  - MovementLab: `LivingFragmentFloor` (x 1240, perto da parede direita) e `LivingFragmentPlatform` (sobre a plataforma one-way). `CrystalBurrower` no chão em x 1040 (território 976–1104, sob a plataforma one-way).
   - `tests/enemies/living_fragment_test.gd`: teste automatizado (103 verificações, incluindo a morte da Terra). Executar: `godot --headless --path . -s res://tests/enemies/living_fragment_test.gd`.
 - `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 - `tests/combat/shared_combat_test.gd`: teste automatizado (44 verificações) da base compartilhada: direção do golpe (`Hitbox` → `Hurtbox`, soco e onda sísmica reais), gancho `_get_damage_taken`, `MeleeAttack.finish_active()` e helpers de `Enemy`. Executar: `godot --headless --path . -s res://tests/combat/shared_combat_test.gd`.
+- `tests/enemies/crystal_burrower_test.gd`: teste automatizado do Escavador de Cristal (48 verificações: configuração, pausa, patrulha, território, paredes, bordas, gravidade, detecção frontal/lado/altura/linha de visão, dano, morte). Executar: `godot --headless --path . -s res://tests/enemies/crystal_burrower_test.gd`.
 - **Cenário: Reino das Profundezas (região da Terra), primeiro conjunto de terreno — atlas, TileSet e sala de teste validados manualmente e commitados.** Ver seção 9, "Cenário".
   - `world/tilesets/depths/`: `depths_terrain.png` (atlas 8x4 de 16x16), `depths_palette.png` (17 cores) e `depths_tileset.tres`.
   - `world/levels/depths/depths_test_room.tscn`: sala de teste jogável (rodar com F6; a cena principal continua sendo o MovementLab).
@@ -91,7 +92,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Teste visual no editor (F5) e na exportação Web; export templates 4.7.2 ainda **não instalados**, preset Web ainda não criado.
 - Opcional, após teste no jogo: mostrar a volta à guarda na recuperação do golpe e o "depois do impacto" após a liberação do Punho Sísmico (hoje ambos voltam direto ao idle; exige mudar a regra do `attack`/`ability`).
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
-- **Segundo inimigo, Escavador de Cristal (planejamento aprovado em 2026-11-14):** etapa 1 (base compartilhada: helpers em `Enemy`, direção do golpe, gancho de dano, `finish_active()`) concluída, não commitada; próxima: etapa 2 (cena base, IDLE/PATROL, detecção frontal), aguardando aprovação.
+- **Segundo inimigo, Escavador de Cristal (planejamento aprovado em 2026-11-14; 6 etapas):** etapa 1 (base compartilhada: helpers em `Enemy`, direção do golpe, gancho de dano, `finish_active()`) commitada (`73f0b2d`); etapa 2 (cena base, IDLE/PATROL, detecção frontal, visual provisório) implementada e commitada, aguardando validação manual no editor; próxima: etapa 3 (CHARGE → DASH → STUNNED), aguardando aprovação. Ver seção 9, "Inimigos".
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
 - Reino das Profundezas: fundos de parallax (arte nova), props (a referência tem pilares, arco, caixotes, lanterna, cristais, plantas), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
@@ -337,6 +338,13 @@ Linhas = quem procura (mask); colunas = layer do alvo.
   - Investida (`MeleeAttack` + `living_fragment_attack.tres`): dispara com |dx| ≤ 40 e |dy| ≤ 24, no chão; preparação 0,35 s parada (o aviso é a própria animação; `show_debug` da hitbox desligado na cena), fase ativa 0,20 s a 200 px/s (até 40 px; com o alvo à frente, para a `dash_stop_distance` = 12 px dele, sem atravessar a Terra), recuperação 0,40 s parada; direção travada. Hitbox 24x12 em (12,-10) (do centro para a frente), mask `player_hurtbox`, dano 1. Recarga 1,5 s a partir do fim da recuperação. Sem dano por contato.
   - Bordas: raio para baixo logo após a borda frontal (`ground_mask` = world + platforms) em todos os estados; nunca cai.
   - Morte: para tudo, desliga o `MeleeAttack` (`PROCESS_MODE_DISABLED`), a hitbox e a detecção. Toca `death` e some ao fim dela (`animation_finished`), via `_play_death_animation()` da base `Enemy`.
+- **Escavador de Cristal** (`CrystalBurrower`, `entities/enemies/crystal_burrower/`, valores em `@export`) — em desenvolvimento (etapa 2 de 6):
+  - Estados `IDLE`, `PATROL`, `CHARGE`, `DASH`, `STUNNED`, `DEAD` (enum + `match`); só `IDLE`, `PATROL` e `DEAD` têm comportamento por enquanto.
+  - Corpo 32x20 em (0,-10) (layer `enemies`, mask world/platforms/destructibles), gravidade padrão; 5 de vida; Hurtbox 34x28 em (0,-14) (alcança o soco da Terra, y -36..-20), sem invulnerabilidade.
+  - Visual provisório: `Polygon2D` em `Visuals` (corpo marrom, cristais roxos nas costas, olho roxo à frente), até os sprites.
+  - `IDLE`: parado 1 s (`idle_time`; também no início). `PATROL`: 25 px/s dentro de ±64 px da origem; ao chegar ao limite do território (para exatamente nele), a uma parede ou a uma borda (raio de `Enemy`, `ground_mask` = world + platforms), entra em `IDLE` e só vira ao fim da pausa. No ar não anda (cai reto).
+  - Detecção frontal: `Visuals/DetectionArea` (retângulo 128x40 de x 0 a 128, pés a 40 px acima; mask `player`; vira junto) + linha de visão (`eye_height` 10, `target_sight_height` 16, `sight_mask` = world + destructibles). Atualizada no fim de cada tick em `IDLE`/`PATROL` (`get_detected_target()`, `is_target_detected()`); ainda não inicia ataques. A lista de sobreposições da `Area2D` atualiza no passo de física seguinte (~2 ticks de atraso ao teleportar a Terra).
+  - Morte provisória (sem animação): `DEAD`, física e detecção desligadas; some depois do piscar da base `Enemy`.
 
 ### Cenário
 

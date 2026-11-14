@@ -1,0 +1,67 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://entities/enemies/crystal_burrower/crystal_burrower.gd" id="1_burrower"]
+[ext_resource type="Script" path="res://core/components/health_component.gd" id="2_health"]
+[ext_resource type="Script" path="res://core/components/hurtbox.gd" id="3_hurtbox"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(32, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_detection"]
+size = Vector2(128, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_hurtbox"]
+size = Vector2(34, 28)
+
+[node name="CrystalBurrower" type="CharacterBody2D"]
+collision_layer = 8
+collision_mask = 67
+script = ExtResource("1_burrower")
+ground_mask = 3
+sight_mask = 65
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+position = Vector2(0, -10)
+shape = SubResource("RectangleShape2D_body")
+
+[node name="Visuals" type="Node2D" parent="."]
+
+[node name="Crystals" type="Polygon2D" parent="Visuals"]
+color = Color(0.62, 0.3, 0.85, 1)
+polygon = PackedVector2Array(-15, -12, -13, -24, -9, -16, -5, -29, -1, -17, 3, -24, 6, -15, 6, -12)
+
+[node name="Body" type="Polygon2D" parent="Visuals"]
+color = Color(0.5, 0.34, 0.22, 1)
+polygon = PackedVector2Array(-17, -2, -17, -10, -11, -17, 0, -20, 10, -17, 16, -11, 17, -2)
+
+[node name="Legs" type="Polygon2D" parent="Visuals"]
+color = Color(0.24, 0.15, 0.17, 1)
+polygon = PackedVector2Array(-14, 0, -14, -3, 15, -3, 15, 0)
+
+[node name="Eye" type="Polygon2D" parent="Visuals"]
+color = Color(0.85, 0.45, 1, 1)
+polygon = PackedVector2Array(10, -11, 14, -11, 14, -8, 10, -8)
+
+[node name="DetectionArea" type="Area2D" parent="Visuals"]
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Visuals/DetectionArea"]
+position = Vector2(64, -20)
+shape = SubResource("RectangleShape2D_detection")
+
+[node name="HealthComponent" type="Node" parent="."]
+script = ExtResource("2_health")
+max_health = 5
+
+[node name="Hurtbox" type="Area2D" parent="." node_paths=PackedStringArray("health")]
+collision_layer = 32
+collision_mask = 0
+monitoring = false
+script = ExtResource("3_hurtbox")
+health = NodePath("../HealthComponent")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
+position = Vector2(0, -14)
+shape = SubResource("RectangleShape2D_hurtbox")
