@@ -79,6 +79,11 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `tests/enemies/living_fragment_test.gd`: teste automatizado (103 verificações, incluindo a morte da Terra). Executar: `godot --headless --path . -s res://tests/enemies/living_fragment_test.gd`.
 - `tests/animation/player_animation_test.gd`: teste automatizado versionado (69 verificações: parâmetros físicos aprovados, colliders, `SpriteFrames`, transições idle/walk/jump/fall, paredes, aterrissagem, flip, física medida, fallback). Executar na raiz do projeto: `godot --headless --path . -s res://tests/animation/player_animation_test.gd` (código de saída 0 = sucesso).
 - `tests/combat/shared_combat_test.gd`: teste automatizado (44 verificações) da base compartilhada: direção do golpe (`Hitbox` → `Hurtbox`, soco e onda sísmica reais), gancho `_get_damage_taken`, `MeleeAttack.finish_active()` e helpers de `Enemy`. Executar: `godot --headless --path . -s res://tests/combat/shared_combat_test.gd`.
+- **Cenário: Reino das Profundezas (região da Terra), primeiro conjunto de terreno — atlas, TileSet e sala de teste validados manualmente e commitados.** Ver seção 9, "Cenário".
+  - `world/tilesets/depths/`: `depths_terrain.png` (atlas 8x4 de 16x16), `depths_palette.png` (17 cores) e `depths_tileset.tres`.
+  - `world/levels/depths/depths_test_room.tscn`: sala de teste jogável (rodar com F6; a cena principal continua sendo o MovementLab).
+  - Testes: `tests/tilesets/depths_terrain_test.gd` (190 verificações: dimensões, paleta, transparência, grade, bordas, apoio, contorno, emendas, cantos internos, variações), `tests/tilesets/depths_tileset_test.gd` (21: atlas, camadas de física, colisões, terrain sets e pintura real com o pincel de terreno) e `tests/levels/depths_test_room_test.gd` (37: estrutura, peças, chão sem tropeço nas emendas, paredes, degraus, teto, one-way, onda sísmica e Fragmento Vivo sobre tiles).
+  - Fontes e scripts de geração (atlas, TileSet, sala, prévias) fora do projeto, em `Desktop\sprites\fase_terra\atlas_build\` (README com instruções; o processo é determinístico).
 
 **Pendente / próximos passos possíveis:**
 - Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
@@ -88,6 +93,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - **Segundo inimigo, Escavador de Cristal (planejamento aprovado em 2026-11-14):** etapa 1 (base compartilhada: helpers em `Enemy`, direção do golpe, gancho de dano, `finish_active()`) concluída, não commitada; próxima: etapa 2 (cena base, IDLE/PATROL, detecção frontal), aguardando aprovação.
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
+- Reino das Profundezas: fundos de parallax (arte nova), props (a referência tem pilares, arco, caixotes, lanterna, cristais, plantas), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -154,8 +160,8 @@ res://                           # raiz do projeto Godot e do repositório Git
 │   └── enemies/
 │       └── _shared/             # Base comum a inimigos; cada inimigo ganha sua pasta
 ├── world/
-│   ├── levels/                  # Fases/salas, uma subpasta por região do mapa
-│   ├── tilesets/                # TileSets e suas texturas
+│   ├── levels/                  # Fases/salas, uma subpasta por região do mapa (depths/ = Reino das Profundezas)
+│   ├── tilesets/                # TileSets e suas texturas, uma subpasta por região (depths/)
 │   └── props/                   # Objetos de cenário (destrutíveis, portas, plataformas)
 ├── ui/
 │   ├── hud/                     # Elementos durante o jogo
@@ -331,6 +337,18 @@ Linhas = quem procura (mask); colunas = layer do alvo.
   - Investida (`MeleeAttack` + `living_fragment_attack.tres`): dispara com |dx| ≤ 40 e |dy| ≤ 24, no chão; preparação 0,35 s parada (o aviso é a própria animação; `show_debug` da hitbox desligado na cena), fase ativa 0,20 s a 200 px/s (até 40 px; com o alvo à frente, para a `dash_stop_distance` = 12 px dele, sem atravessar a Terra), recuperação 0,40 s parada; direção travada. Hitbox 24x12 em (12,-10) (do centro para a frente), mask `player_hurtbox`, dano 1. Recarga 1,5 s a partir do fim da recuperação. Sem dano por contato.
   - Bordas: raio para baixo logo após a borda frontal (`ground_mask` = world + platforms) em todos os estados; nunca cai.
   - Morte: para tudo, desliga o `MeleeAttack` (`PROCESS_MODE_DISABLED`), a hitbox e a detecção. Toca `death` e some ao fim dela (`animation_finished`), via `_play_death_animation()` da base `Enemy`.
+
+### Cenário
+
+- **Terreno em `TileMapLayer`** (uma camada `Terrain` por sala, com chão, paredes e plataformas). Destrutíveis continuam fora do tilemap (ver "Regras de design").
+- **Reino das Profundezas** (`depths`, região da Terra):
+  - **Atlas** `depths_terrain.png`: 8x4 células de 16x16 (128x64), paleta fixa de 17 cores (`depths_palette.png`; a cor 16, laranja, é reservada aos props). Mapa das células: linha 0 = canto ↖, topo, canto ↗, cantos internos ↖/↗ (diagonal vazia), topo v1/v2, bloco 1x1; linha 1 = lateral ←, centro, lateral →, cantos internos ↙/↘, centro v1–v3; linha 2 = canto ↙, base, canto ↘, faixa horizontal (← · →), base v1, (7,2) vazia; linha 3 = faixa vertical (↑ · ↓), plataforma (← · →), plataforma · v1, plataforma 1x1. Variações têm a mesma silhueta e as mesmas bordas da peça base.
+  - **TileSet** `depths_tileset.tres`: camada de física 0 = layer `world` (polígono 16x16 nos 26 sólidos); camada 1 = layer `platforms` (faixa one-way de 16x8 no topo das 5 plataformas, mesma espessura da plataforma do MovementLab; o desenho do corpo tem 13 px). Máscaras 0.
+  - **Terrain sets:** 0 = `Rocha` (cantos e lados), 1 = `Plataforma` (só lados). Variações com probabilidade 0,15 (base 1,0). Pintar com o pincel de terreno do editor (ou `set_cells_terrain_connect`).
+  - **Regra deste primeiro conjunto** (não vale para o jogo todo): massas sólidas com espessura mínima de 2 tiles e faixas de 1 tile isoladas, inclusive na diagonal. Junções em T e dois cantos internos no mesmo tile não têm peça (o pincel escolhe a mais próxima). Sem rampas.
+  - Bordas da sala: pintar uma moldura de rocha 1 tile fora dos limites da câmera, para que as bordas visíveis usem peças internas.
+- **Plataformas one-way e altura da Terra:** o pulo sobe 56 px e a Terra tem 46 px de altura, então uma plataforma alcançável a partir do chão fica na altura da cabeça de quem anda embaixo. No level design, plataformas sobre chão percorrível ficam a 3 tiles ou mais e são alcançadas a partir de pontos elevados.
+- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Terrain`, `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
 
 ### A definir
 
