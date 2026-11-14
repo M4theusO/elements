@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" path="res://entities/enemies/crystal_burrower/crystal_burrower.gd" id="1_burrower"]
 [ext_resource type="Script" path="res://core/components/health_component.gd" id="2_health"]
-[ext_resource type="Script" path="res://core/components/hurtbox.gd" id="3_hurtbox"]
+[ext_resource type="Script" path="res://entities/enemies/crystal_burrower/carapace_hurtbox.gd" id="3_hurtbox"]
 [ext_resource type="Script" path="res://core/components/hitbox.gd" id="4_hitbox"]
 [ext_resource type="Script" path="res://core/components/melee_attack.gd" id="5_melee"]
 [ext_resource type="Resource" path="res://entities/enemies/crystal_burrower/crystal_burrower_dash.tres" id="6_dash"]
@@ -73,12 +73,13 @@ shape = SubResource("RectangleShape2D_hitbox")
 script = ExtResource("2_health")
 max_health = 5
 
-[node name="Hurtbox" type="Area2D" parent="." node_paths=PackedStringArray("health")]
+[node name="Hurtbox" type="Area2D" parent="." node_paths=PackedStringArray("health", "facing_node")]
 collision_layer = 32
 collision_mask = 0
 monitoring = false
 script = ExtResource("3_hurtbox")
 health = NodePath("../HealthComponent")
+facing_node = NodePath("../Visuals")
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Hurtbox"]
 position = Vector2(0, -14)

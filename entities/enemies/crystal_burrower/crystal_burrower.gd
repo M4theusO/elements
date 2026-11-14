@@ -9,6 +9,9 @@ extends Enemy
 ## hitbox ligada) → vulnerável e parado (STUNNED) → IDLE, com recarga a partir daí.
 ## Cada estado do ataque é uma fase do MeleeAttack (AttackData crystal_burrower_dash.tres):
 ## windup_time = CHARGE, active_time = duração máxima do DASH, recovery_time = STUNNED.
+## Carapaça nas costas (CarapaceHurtbox): golpes por trás causam metade do dano, exceto em
+## STUNNED. Em IDLE/PATROL, um golpe o faz parar por um instante e virar para o atacante;
+## o ataque (CHARGE, DASH, STUNNED) nunca é interrompido nem muda de direção.
 
 enum State { IDLE, PATROL, CHARGE, DASH, STUNNED, DEAD }
 
@@ -26,6 +29,12 @@ const CRYSTAL_CHARGE: Color = Color(1.6, 1.6, 1.6)
 const CRYSTAL_DASH: Color = Color(2.2, 2.2, 2.2)
 const CRYSTAL_STUNNED: Color = Color(0.45, 0.45, 0.45)
 const CRYSTAL_BLINK_INTERVAL: float = 0.1
+## Clarões provisórios (Visuals.modulate) dos golpes na carapaça: com dano reduzido, um clarão
+## lilás no lugar do branco normal; absorvido (0 de dano), um clarão curto cinza-arroxeado.
+const SHELL_HIT_COLOR: Color = Color(1.5, 1.3, 2.0)
+const SHELL_HIT_DURATION: float = 0.1
+const SHELL_BLOCK_COLOR: Color = Color(0.7, 0.6, 0.9)
+const SHELL_BLOCK_DURATION: float = 0.06
 
 @export_group("Patrulha")
 @export_range(0.0, 200.0, 1.0, "suffix:px/s") var patrol_speed: float = 25.0
@@ -47,6 +56,10 @@ const CRYSTAL_BLINK_INTERVAL: float = 0.1
 ## Tempo sem iniciar outra investida, contado a partir do fim de STUNNED.
 @export_range(0.0, 10.0, 0.05, "suffix:s") var cooldown_time: float = 1.0
 
+@export_group("Dano recebido")
+## Tempo parado ao receber um golpe em IDLE/PATROL (a redução de dano fica na CarapaceHurtbox).
+@export_range(0.0, 2.0, 0.05, "suffix:s") var hit_react_time: float = 0.25
+
 @export_group("Física")
 @export_range(0.0, 2000.0, 1.0, "suffix:px/s") var max_fall_speed: float = 360.0
 ## Layers que contam como chão à frente (configurado na cena).
@@ -63,8 +76,10 @@ var _detected_target: Node2D
 var _cooldown_left: float = 0.0
 ## Tempo desde o início de CHARGE (só para o piscar dos cristais).
 var _charge_elapsed: float = 0.0
+var _react_left: float = 0.0
 
 @onready var _detection_area: Area2D = $Visuals/DetectionArea
+@onready var _carapace: CarapaceHurtbox = $Hurtbox
 @onready var _melee_attack: MeleeAttack = $MeleeAttack
 @onready var _hitbox: Hitbox = $Visuals/Hitbox
 @onready var _crystals: CanvasItem = $Visuals/Crystals
@@ -73,18 +88,29 @@ var _charge_elapsed: float = 0.0
 func _ready() -> void:
 	super()
 	_patrol_origin_x = global_position.x
+	_carapace.hit_received.connect(_on_hit_received)
+	_carapace.shell_blocked.connect(_on_shell_blocked)
 	_enter_idle(false)
 
 
 func _physics_process(delta: float) -> void:
 	# MeleeAttack roda antes (prioridade -1): a fase lida aqui já é a deste tick.
 	_cooldown_left = maxf(_cooldown_left - delta, 0.0)
+	# Lido antes de descontar: o tick em que a reação termina ainda conta como parado (0,25 s = 15 ticks).
+	var reacting: bool = is_reacting()
+	_react_left = maxf(_react_left - delta, 0.0)
 	_apply_gravity(delta, max_fall_speed)
 	match _state:
 		State.IDLE:
-			_update_idle(delta)
+			if reacting:
+				velocity.x = 0.0
+			else:
+				_update_idle(delta)
 		State.PATROL:
-			_update_patrol(delta)
+			if reacting:
+				velocity.x = 0.0
+			else:
+				_update_patrol(delta)
 		State.CHARGE:
 			_update_charge(delta)
 		State.DASH:
@@ -97,12 +123,14 @@ func _physics_process(delta: float) -> void:
 	# Parede à frente: limite da patrulha ou fim antecipado da investida. A Hitbox (filha)
 	# roda depois deste nó no mesmo tick, então já encontra a hitbox desligada.
 	if is_on_wall() and get_wall_normal().x * get_facing() < 0.0:
-		if _state == State.PATROL:
+		if _state == State.PATROL and not reacting:
 			_enter_idle(true)
 		elif _state == State.DASH:
 			_end_dash_early()
 	_update_detection()
-	_try_start_charge()
+	# A reação a um golpe tem prioridade sobre a detecção: não inicia o ataque enquanto dura.
+	if not reacting:
+		_try_start_charge()
 	_update_crystals()
 
 
@@ -129,16 +157,68 @@ func is_attack_ready() -> bool:
 	return _cooldown_left <= TIME_EPSILON
 
 
+## Parado por causa de um golpe recebido em IDLE/PATROL.
+func is_reacting() -> bool:
+	return _react_left > TIME_EPSILON
+
+
 func _on_death() -> void:
 	_state = State.DEAD
 	_detected_target = null
+	_react_left = 0.0
 	velocity = Vector2.ZERO
+	# Golpes no corpo morto não passam pela carapaça (sem shell_blocked nem frações guardadas).
+	_carapace.shell_active = false
+	_carapace.reset_pending_damage()
 	set_physics_process(false)
 	# Um ataque em andamento não pode ligar a hitbox nem avançar de fase depois da morte.
 	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
 	_hitbox.deactivate()
 	_detection_area.set_deferred("monitoring", false)
 	_crystals.self_modulate = CRYSTAL_NORMAL
+
+
+## Clarão do dano aplicado: lilás se o golpe acertou a carapaça, o branco da base nos outros
+## casos e no golpe que mata (a morte some ao fim deste clarão, ver Enemy._on_died()).
+func _on_damaged(amount: int) -> void:
+	if _carapace.is_last_hit_on_shell() and not is_dead():
+		_flash(SHELL_HIT_COLOR, SHELL_HIT_DURATION)
+	else:
+		super(amount)
+
+
+## Todo golpe aceito, inclusive os absorvidos (damage 0); vem antes de o dano ser aplicado.
+func _on_hit_received(damage: int) -> void:
+	# Morto ou golpe fatal: a morte cuida de tudo, sem reação.
+	if is_dead() or damage >= _health.current_health:
+		return
+	# CHARGE, DASH e STUNNED não são interrompidos nem mudam de direção.
+	if _state != State.IDLE and _state != State.PATROL:
+		return
+	_react_left = hit_react_time
+	velocity.x = 0.0
+	# Vira para quem atacou (contra a trajetória do golpe), se ela for conhecida.
+	var direction: Vector2 = _carapace.get_last_hit_direction()
+	if absf(direction.x) > CarapaceHurtbox.DIRECTION_EPSILON:
+		var toward_attacker: float = -signf(direction.x)
+		if toward_attacker != get_facing():
+			_set_facing(toward_attacker)
+			# Já virou: uma virada pendente do fim da pausa o deixaria de costas para o atacante.
+			_turn_after_idle = false
+
+
+func _on_shell_blocked() -> void:
+	if not is_dead():
+		_flash(SHELL_BLOCK_COLOR, SHELL_BLOCK_DURATION)
+
+
+## Mesmo mecanismo do clarão da base Enemy (_flash_tween), com outra cor e duração.
+func _flash(color: Color, duration: float) -> void:
+	if _flash_tween != null:
+		_flash_tween.kill()
+	_visuals.modulate = color
+	_flash_tween = create_tween()
+	_flash_tween.tween_property(_visuals, "modulate", Color.WHITE, duration)
 
 
 func _enter_idle(turn_after: bool) -> void:
@@ -241,13 +321,17 @@ func _end_dash_early() -> void:
 func _enter_stunned() -> void:
 	_state = State.STUNNED
 	velocity.x = 0.0
+	# Vulnerável: dano integral, sem levar frações de antes para este período.
+	_carapace.shell_active = false
+	_carapace.reset_pending_damage()
 
 
 func _update_stunned() -> void:
 	velocity.x = 0.0
 	if _melee_attack.is_busy():
 		return
-	# Fim da recuperação: volta a IDLE e só então começa a recarga.
+	# Fim da recuperação: carapaça de volta, IDLE e só então começa a recarga.
+	_carapace.shell_active = true
 	_cooldown_left = cooldown_time
 	_enter_idle(false)
 

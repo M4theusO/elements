@@ -1,7 +1,8 @@
 extends SceneTree
 ## Teste automatizado do Escavador de Cristal (CrystalBurrower), etapas 2 e 3: cena, IDLE/PATROL,
 ## território, paredes, bordas, detecção frontal, dano, morte provisória e o ataque
-## (CHARGE → DASH → STUNNED → recarga), incluindo fins antecipados e morte em cada fase.
+## (CHARGE → DASH → STUNNED → recarga), incluindo fins antecipados e morte em cada fase;
+## etapa 4: carapaça (dano pelas costas reduzido, acumulador fracionário), reação a golpes e feedback.
 ## Cada caso monta um cenário próprio em código.
 ##
 ## Execução (na raiz do projeto), sai com código 0 se tudo passar e 1 se algo falhar:
@@ -35,6 +36,8 @@ const LONG_COOLDOWN: float = 100.0
 ## e segura o botão por estes ticks (pulo completo).
 const JUMP_TRIGGER_DX: float = 50.0
 const JUMP_HOLD_TICKS: int = 20
+## Reação a golpe em IDLE/PATROL: 0,25 s parado.
+const REACT_TICKS: int = 15
 
 var _failures: int = 0
 var _checks: int = 0
@@ -81,6 +84,19 @@ func _run() -> void:
 	await _test_death_in_charge()
 	await _test_death_in_dash()
 	await _test_death_in_stunned()
+
+	_check_carapace_configuration()
+	await _test_front_and_back_damage()
+	await _test_fractional_damage()
+	await _test_unknown_direction()
+	await _test_orientation_change()
+	await _test_invulnerability_does_not_accumulate()
+	await _test_shell_visual_feedback()
+	await _test_hit_reaction()
+	await _test_reaction_blocks_charge()
+	await _test_hits_during_attack()
+	await _test_real_terra_hits_from_behind()
+	await _test_death_with_carapace()
 
 	if _world != null:
 		_world.free()
@@ -348,16 +364,18 @@ func _test_damage() -> void:
 	var x0: float = burrower.global_position.x
 	await _wait(20)
 	_check(burrower.get_state() == CrystalBurrower.State.PATROL and burrower.global_position.x > x0
-		and visuals.modulate.is_equal_approx(Color.WHITE), "o golpe não interrompe a patrulha; clarão some")
+		and visuals.modulate.is_equal_approx(Color.WHITE), "segue patrulhando depois da reação; clarão some")
 
-	# Soco real da Terra alcança a hurtbox.
+	# Soco real da Terra alcança a hurtbox (de frente: o Escavador olha para a Terra).
 	await _new_world()
 	_floor(0.0, 1000.0)
 	burrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
+	burrower._set_facing(-1.0)
 	await _spawn_terra(START_X - 20.0)
 	await _press("attack")
 	await _wait(20)
-	_check(_hp(burrower) == 4, "soco da Terra acerta o Escavador")
+	_check(_hp(burrower) == 4, "soco da Terra acerta o Escavador de frente: 1 de dano")
 
 
 func _test_death() -> void:
@@ -713,7 +731,353 @@ func _kill_and_check(burrower: CrystalBurrower, terra: PlayerCharacter, terra_hp
 		"morte em %s: sem movimento, transições ou dano depois; some (vida da Terra %d)" % [label, _hp(terra)])
 
 
+# --- Carapaça e reação a golpes (etapa 4) ---------------------------------------------
+
+func _check_carapace_configuration() -> void:
+	print("-- Configuração da carapaça")
+	var burrower: CrystalBurrower = _burrower_scene.instantiate() as CrystalBurrower
+	var carapace: CarapaceHurtbox = burrower.get_node("Hurtbox") as CarapaceHurtbox
+	_check(carapace != null and carapace is Hurtbox and carapace.facing_node == burrower.get_node("Visuals")
+		and is_equal_approx(carapace.back_damage_multiplier, 0.5) and carapace.shell_active,
+		"Hurtbox é uma CarapaceHurtbox (Hurtbox), frente lida de Visuals, costas a 50%, ativa")
+	_check(is_equal_approx(burrower.hit_react_time, 0.25), "reação a golpe de 0,25 s")
+	burrower.free()
+
+
+func _test_front_and_back_damage() -> void:
+	print("-- Dano frontal e pelas costas")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var log: Dictionary = _listen(burrower)
+	_hit(burrower, 1, _front(burrower))
+	_check(_hp(burrower) == 4 and log.taken == [1] and log.blocked == 0 and not _carapace_of(burrower).is_last_hit_on_shell(),
+		"golpe frontal (trajetória contra a orientação): dano integral")
+	_hit(burrower, 1, _back(burrower))
+	_check(_hp(burrower) == 4 and log.taken == [1, 0] and log.blocked == 1 and _carapace_of(burrower).is_last_hit_on_shell(),
+		"golpe pelas costas (trajetória a favor da orientação): reduzido")
+
+
+func _test_fractional_damage() -> void:
+	print("-- Acumulador fracionário")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var carapace: CarapaceHurtbox = _carapace_of(burrower)
+	var log: Dictionary = _listen(burrower)
+	var pending: Array[float] = []
+	for i: int in 4:
+		_hit(burrower, 1, _back(burrower))
+		pending.append(carapace.get_pending_damage())
+	_check(log.taken == [0, 1, 0, 1] and _hp(burrower) == 3, "4 golpes de 1 HP pelas costas: 0, 1, 0, 1 (vida 3)")
+	_check(pending == [0.5, 0.0, 0.5, 0.0], "fração guardada: 0,5 / 0 / 0,5 / 0")
+	_check(log.blocked == 2, "shell_blocked só nos golpes absorvidos por inteiro (2)")
+	_hit(burrower, 2, _back(burrower))
+	_check(log.taken.back() == 1 and is_zero_approx(carapace.get_pending_damage()) and _hp(burrower) == 2
+		and log.blocked == 2, "golpe de 2 HP pelas costas: 1 HP, sem fração")
+	_hit(burrower, 1, _back(burrower))
+	_hit(burrower, 1, _front(burrower))
+	_check(log.taken.slice(-2) == [0, 1] and is_equal_approx(carapace.get_pending_damage(), 0.5) and _hp(burrower) == 1,
+		"golpe frontal não usa nem altera a fração guardada")
+
+
+func _test_unknown_direction() -> void:
+	print("-- Direção desconhecida")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var log: Dictionary = _listen(burrower)
+	_hit(burrower, 1, Vector2.ZERO)
+	_hit(burrower, 1, Vector2.DOWN)
+	_check(log.taken == [1, 1] and log.blocked == 0 and is_zero_approx(_carapace_of(burrower).get_pending_damage()),
+		"Vector2.ZERO e golpe vertical: dano integral, sem fração")
+	_check(burrower.get_facing() == 1.0, "sem direção horizontal: não vira")
+
+
+func _test_orientation_change() -> void:
+	print("-- Mudança de orientação")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var log: Dictionary = _listen(burrower)
+	# A reação vira o Escavador para o atacante: a orientação é refeita antes de cada golpe.
+	burrower._set_facing(-1.0)
+	_hit(burrower, 1, Vector2.LEFT)
+	_check(log.taken == [0], "olhando para a esquerda: golpe indo para a esquerda acerta as costas")
+	burrower._set_facing(-1.0)
+	_hit(burrower, 1, Vector2.RIGHT)
+	_check(log.taken == [0, 1] and _hp(burrower) == 4, "olhando para a esquerda: golpe indo para a direita é frontal")
+	burrower._set_facing(1.0)
+	_hit(burrower, 1, Vector2(0.6, -0.8))
+	_check(log.taken.back() == 1 and is_zero_approx(_carapace_of(burrower).get_pending_damage()),
+		"de volta à direita, golpe diagonal pelas costas: usa a componente horizontal (0,5 + 0,5 = 1)")
+
+
+func _test_invulnerability_does_not_accumulate() -> void:
+	print("-- Invulnerabilidade não acumula")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var carapace: CarapaceHurtbox = _carapace_of(burrower)
+	var log: Dictionary = _listen(burrower)
+	carapace.invulnerability_time = 1.0
+	_hit(burrower, 1, _back(burrower))
+	_hit(burrower, 1, _back(burrower))
+	_check(log.taken == [0] and log.blocked == 1 and is_equal_approx(carapace.get_pending_damage(), 0.5),
+		"golpe ignorado pela invulnerabilidade não soma fração nem emite shell_blocked")
+
+
+func _test_shell_visual_feedback() -> void:
+	print("-- Feedback visual da carapaça")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var visuals: Node2D = burrower.get_node("Visuals") as Node2D
+	_hit(burrower, 1, _back(burrower))
+	_check(visuals.modulate == CrystalBurrower.SHELL_BLOCK_COLOR, "golpe absorvido: clarão cinza-arroxeado")
+	await _wait(5)
+	_check(visuals.modulate.is_equal_approx(Color.WHITE), "clarão curto (some em 0,06 s)")
+	_hit(burrower, 1, _back(burrower))
+	_check(visuals.modulate == CrystalBurrower.SHELL_HIT_COLOR and _hp(burrower) == 4,
+		"golpe reduzido com dano: impacto lilás na carapaça")
+	await _wait(10)
+	_hit(burrower, 1, _front(burrower))
+	_check(visuals.modulate == Enemy.FLASH_COLOR and _hp(burrower) == 3, "golpe frontal: clarão normal de dano")
+	await _wait(10)
+	_check(visuals.modulate.is_equal_approx(Color.WHITE)
+		and _crystals_of(burrower).self_modulate == CrystalBurrower.CRYSTAL_NORMAL, "clarões somem; cristais normais")
+
+
+func _test_hit_reaction() -> void:
+	print("-- Reação a golpe em IDLE e PATROL")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X)
+	_hold_attacks(burrower)
+	await _wait(IDLE_TICKS + 20)
+	_check(burrower.get_state() == CrystalBurrower.State.PATROL, "patrulhando para a direita")
+	# Golpe pelas costas: o atacante está à esquerda.
+	_hit(burrower, 1, _back(burrower))
+	_check(burrower.is_reacting() and burrower.get_facing() == -1.0 and is_zero_approx(burrower.velocity.x),
+		"golpe pelas costas: para e vira para o atacante na hora")
+	var still: int = await _count_still_ticks(burrower, 60)
+	_check(still == REACT_TICKS, "parado por 0,25 s (%d ticks)" % still)
+	var x0: float = burrower.global_position.x
+	await _wait(10)
+	_check(burrower.get_state() == CrystalBurrower.State.PATROL and not burrower.is_reacting()
+		and burrower.global_position.x < x0, "depois retoma a patrulha, agora para a esquerda")
+	# Golpe frontal: para, sem virar.
+	_hit(burrower, 1, _front(burrower))
+	_check(burrower.is_reacting() and burrower.get_facing() == -1.0, "golpe frontal: para, sem virar")
+	still = await _count_still_ticks(burrower, 60)
+	_check(still == REACT_TICKS, "golpe frontal: 0,25 s parado (%d ticks)" % still)
+	# Direção desconhecida em IDLE: para, sem virar.
+	await _new_world()
+	_floor(0.0, 1000.0)
+	burrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
+	await _wait(2)
+	_hit(burrower, 1, Vector2.ZERO)
+	_check(burrower.is_reacting() and burrower.get_state() == CrystalBurrower.State.IDLE and burrower.get_facing() == 1.0,
+		"IDLE, direção desconhecida: reage sem virar")
+	# Virada pendente do fim da pausa é cancelada quando o golpe já o virou.
+	await _new_world()
+	_floor(0.0, 1000.0)
+	burrower = _spawn_burrower(START_X)
+	_hold_attacks(burrower)
+	await _wait_state(burrower, CrystalBurrower.State.PATROL, IDLE_TICKS + 5)
+	await _wait_state(burrower, CrystalBurrower.State.IDLE, 200)
+	_check(burrower._turn_after_idle and burrower.get_facing() == 1.0, "no limite direito, pausa com virada pendente")
+	_hit(burrower, 1, _back(burrower))
+	await _wait_state(burrower, CrystalBurrower.State.PATROL, IDLE_TICKS + 5)
+	await _wait(5)
+	_check(burrower.get_facing() == -1.0, "golpe pelas costas na pausa: vira uma vez só e segue para o atacante")
+
+
+func _test_reaction_blocks_charge() -> void:
+	print("-- Reação tem prioridade sobre a detecção")
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	await _spawn_terra(START_X + 60.0)
+	await _wait(DETECTION_TICKS)
+	_hit(burrower, 1, _front(burrower))
+	burrower._cooldown_left = 0.0
+	var ticks: int = 0
+	while burrower.get_state() != CrystalBurrower.State.CHARGE and ticks < 60:
+		await physics_frame
+		ticks += 1
+	# 15 ticks parado reagindo; a preparação começa no fim do tick seguinte.
+	_check(ticks == REACT_TICKS + 1 and burrower.get_state() == CrystalBurrower.State.CHARGE,
+		"Terra à frente, recarga pronta: só prepara o ataque depois da reação (%d ticks)" % ticks)
+
+
+func _test_hits_during_attack() -> void:
+	print("-- Golpes durante CHARGE, DASH e STUNNED")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var carapace: CarapaceHurtbox = _carapace_of(burrower)
+	var log: Dictionary = _listen(burrower)
+	await _spawn_terra(START_X + 80.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	# CHARGE: frontal no tick 10, pelas costas no tick 20.
+	var ticks: int = 0
+	var reacted: bool = false
+	var turned: bool = false
+	while burrower.get_state() == CrystalBurrower.State.CHARGE and ticks < 100:
+		if ticks == 10:
+			_hit(burrower, 1, _front(burrower))
+		elif ticks == 20:
+			_hit(burrower, 1, _back(burrower))
+		reacted = reacted or burrower.is_reacting()
+		turned = turned or burrower.get_facing() != 1.0
+		ticks += 1
+		await physics_frame
+	_check(ticks == CHARGE_TICKS and not reacted and not turned,
+		"CHARGE: golpes não interrompem a preparação (%d ticks) nem viram" % ticks)
+	_check(log.taken == [1, 0] and _hp(burrower) == 4 and is_equal_approx(carapace.get_pending_damage(), 0.5),
+		"CHARGE: frontal integral, costas pela carapaça (fração 0,5 guardada)")
+	# DASH: frontal no tick 10.
+	var x_start: float = burrower.global_position.x - DASH_STEP
+	ticks = 0
+	while burrower.get_state() == CrystalBurrower.State.DASH and ticks < 100:
+		if ticks == 10:
+			_hit(burrower, 1, _front(burrower))
+		reacted = reacted or burrower.is_reacting()
+		turned = turned or burrower.get_facing() != 1.0
+		ticks += 1
+		await physics_frame
+	var distance: float = burrower.global_position.x - x_start
+	_check(ticks == DASH_TICKS and absf(distance - DASH_RANGE) < 0.5 and not reacted and not turned,
+		"DASH: golpe não interrompe a investida (%d ticks, %.2f px) nem vira" % [ticks, distance])
+	_check(log.taken.back() == 1 and _hp(burrower) == 3, "DASH: dano normal")
+	# STUNNED: carapaça desligada e fração zerada; costas no tick 10 = dano integral.
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and not carapace.shell_active
+		and is_zero_approx(carapace.get_pending_damage()), "STUNNED: carapaça desligada, fração de antes zerada")
+	ticks = 0
+	while burrower.get_state() == CrystalBurrower.State.STUNNED and ticks < 200:
+		if ticks == 10:
+			_hit(burrower, 1, _back(burrower))
+		reacted = reacted or burrower.is_reacting()
+		turned = turned or burrower.get_facing() != 1.0
+		ticks += 1
+		await physics_frame
+	_check(ticks == STUN_TICKS and not reacted and not turned,
+		"STUNNED: golpe não reinicia a vulnerabilidade (%d ticks) nem vira" % ticks)
+	_check(log.taken.back() == 1 and log.blocked == 1 and _hp(burrower) == 2, "STUNNED: golpe pelas costas com dano integral")
+	_check(burrower.get_state() == CrystalBurrower.State.IDLE and carapace.shell_active
+		and is_zero_approx(carapace.get_pending_damage()), "fim de STUNNED: carapaça de volta, sem fração")
+	_hit(burrower, 1, _back(burrower))
+	_check(log.taken.back() == 0 and _hp(burrower) == 2, "de volta a IDLE: costas reduzidas de novo")
+
+
+func _test_real_terra_hits_from_behind() -> void:
+	print("-- Golpes reais da Terra pelas costas")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var log: Dictionary = _listen(burrower)
+	await _spawn_terra(START_X - 20.0)
+	await _press("attack")
+	var waited: int = 0
+	while log.taken.is_empty() and waited < 20:
+		await physics_frame
+		waited += 1
+	_check(log.taken == [0] and log.blocked == 1 and _hp(burrower) == 5 and burrower.get_facing() == -1.0,
+		"soco pelas costas: absorvido pela carapaça e vira para a Terra")
+	var ticks: int = 0
+	while burrower.get_state() != CrystalBurrower.State.CHARGE and ticks < 60:
+		await physics_frame
+		ticks += 1
+	_check(burrower.get_state() == CrystalBurrower.State.CHARGE and ticks == REACT_TICKS + 1,
+		"depois da reação, prepara a investida contra a Terra (%d ticks)" % ticks)
+
+	# Punho Sísmico (2 de dano) pelas costas: 1 HP.
+	await _new_world()
+	_floor(0.0, 1000.0)
+	burrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	log = _listen(burrower)
+	await _spawn_terra(START_X - 40.0)
+	await _press("ability")
+	waited = 0
+	while log.taken.is_empty() and waited < 60:
+		await physics_frame
+		waited += 1
+	_check(log.taken == [1] and _hp(burrower) == 4 and log.blocked == 0, "onda sísmica (2) pelas costas: 1 de dano")
+
+
+func _test_death_with_carapace() -> void:
+	print("-- Morte com a carapaça")
+	# Golpe fatal pelas costas: clarão normal, sem reação nem virada.
+	var burrower: CrystalBurrower = await _spawn_still_burrower()
+	var carapace: CarapaceHurtbox = _carapace_of(burrower)
+	var log: Dictionary = _listen(burrower)
+	var visuals: Node2D = burrower.get_node("Visuals") as Node2D
+	_hit(burrower, 1, _back(burrower))
+	# O primeiro golpe já o virou para o atacante; o fatal não vira de novo.
+	var facing: float = burrower.get_facing()
+	_hit(burrower, 10, _back(burrower))
+	_check(burrower.is_dead() and burrower.get_state() == CrystalBurrower.State.DEAD and burrower.get_facing() == facing
+		and not burrower.is_reacting() and visuals.modulate == Enemy.FLASH_COLOR,
+		"golpe fatal pelas costas (0,5 + 5): morre com o clarão normal, sem reação")
+	_check(not carapace.shell_active and is_zero_approx(carapace.get_pending_damage()),
+		"morte: carapaça desligada, fração zerada")
+	var blocked_before: int = log.blocked
+	_hit(burrower, 1, _back(burrower))
+	_check(log.blocked == blocked_before and _hp(burrower) == 0 and is_zero_approx(carapace.get_pending_damage())
+		and visuals.modulate != CrystalBurrower.SHELL_BLOCK_COLOR,
+		"golpe depois da morte: sem dano, sem carapaça, sem feedback")
+
+	# Morte durante a reação.
+	burrower = await _spawn_still_burrower()
+	_hit(burrower, 1, _back(burrower))
+	await _wait(3)
+	_check(burrower.is_reacting(), "reagindo a um golpe")
+	_hit(burrower, 10, Vector2.ZERO)
+	_check(burrower.get_state() == CrystalBurrower.State.DEAD and not burrower.is_reacting(),
+		"morte durante a reação: DEAD, reação cancelada")
+	var ticks: int = 0
+	while _is_alive(burrower) and ticks < 30:
+		await physics_frame
+		ticks += 1
+	_check(not _is_alive(burrower), "some depois do piscar (%d ticks)" % ticks)
+
+
 # --- Utilidades -------------------------------------------------------------------
+
+## Escavador parado (pausa longa) e sem atacar, já no chão.
+func _spawn_still_burrower() -> CrystalBurrower:
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
+	await _wait(2)
+	return burrower
+
+
+func _carapace_of(burrower: CrystalBurrower) -> CarapaceHurtbox:
+	return burrower.get_node("Hurtbox") as CarapaceHurtbox
+
+
+func _hit(burrower: CrystalBurrower, damage: int, direction: Vector2) -> void:
+	_carapace_of(burrower).receive_hit(damage, direction)
+
+
+## Trajetória de um golpe que vem de frente (contra a orientação) ou pelas costas (a favor).
+func _front(burrower: CrystalBurrower) -> Vector2:
+	return Vector2(-burrower.get_facing(), 0.0)
+
+
+func _back(burrower: CrystalBurrower) -> Vector2:
+	return Vector2(burrower.get_facing(), 0.0)
+
+
+## Registra o dano resultante de cada golpe aceito (taken) e os shell_blocked (blocked).
+func _listen(burrower: CrystalBurrower) -> Dictionary:
+	var log: Dictionary = {"taken": [], "blocked": 0}
+	var carapace: CarapaceHurtbox = _carapace_of(burrower)
+	carapace.hit_received.connect(func(damage: int) -> void: (log.taken as Array).append(damage))
+	carapace.shell_blocked.connect(func() -> void: log.blocked += 1)
+	return log
+
+
+## Ticks seguidos sem deslocamento horizontal a partir de agora.
+func _count_still_ticks(burrower: CrystalBurrower, max_ticks: int) -> int:
+	var x: float = burrower.global_position.x
+	var ticks: int = 0
+	while ticks < max_ticks:
+		await physics_frame
+		if not is_equal_approx(burrower.global_position.x, x):
+			break
+		ticks += 1
+	return ticks
 
 func _hold_attacks(burrower: CrystalBurrower) -> void:
 	burrower._cooldown_left = LONG_COOLDOWN
