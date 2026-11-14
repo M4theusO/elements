@@ -1,0 +1,31 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://world/levels/depths/backgrounds/depths_bg_far.png" id="1_kwy20"]
+[ext_resource type="Texture2D" path="res://world/levels/depths/backgrounds/depths_bg_mid.png" id="2_1i17c"]
+[ext_resource type="Texture2D" path="res://world/levels/depths/backgrounds/depths_bg_near.png" id="3_qwr0y"]
+
+[node name="DepthsParallax" type="Node2D" unique_id=1727360602]
+
+[node name="Far" type="Parallax2D" parent="." unique_id=1626277376]
+scroll_scale = Vector2(0.15, 0)
+repeat_size = Vector2(852, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="Far" unique_id=1634950356]
+texture = ExtResource("1_kwy20")
+centered = false
+
+[node name="Mid" type="Parallax2D" parent="." unique_id=671721271]
+scroll_scale = Vector2(0.4, 0)
+repeat_size = Vector2(1110, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="Mid" unique_id=175169895]
+texture = ExtResource("2_1i17c")
+centered = false
+
+[node name="Near" type="Parallax2D" parent="." unique_id=863060102]
+scroll_scale = Vector2(0.7, 0)
+repeat_size = Vector2(1056, 0)
+
+[node name="Sprite2D" type="Sprite2D" parent="Near" unique_id=168119302]
+texture = ExtResource("3_qwr0y")
+centered = false

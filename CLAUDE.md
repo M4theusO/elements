@@ -51,7 +51,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 
 ## 3. Estado atual do projeto
 
-Última atualização: 2026-11-13. Repositório: https://github.com/M4theusO/elements (privado, branch `master`).
+Última atualização: 2026-11-14. Repositório: https://github.com/M4theusO/elements (privado, branch `master`).
 
 **Concluído:**
 - Fundação: `project.godot` (seção 9), estrutura de pastas (seção 7), Input Map e Collision Layers.
@@ -85,6 +85,10 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `world/levels/depths/depths_test_room.tscn`: sala de teste jogável (rodar com F6; a cena principal continua sendo o MovementLab).
   - Testes: `tests/tilesets/depths_terrain_test.gd` (190 verificações: dimensões, paleta, transparência, grade, bordas, apoio, contorno, emendas, cantos internos, variações), `tests/tilesets/depths_tileset_test.gd` (21: atlas, camadas de física, colisões, terrain sets e pintura real com o pincel de terreno) e `tests/levels/depths_test_room_test.gd` (37: estrutura, peças, chão sem tropeço nas emendas, paredes, degraus, teto, one-way, onda sísmica e Fragmento Vivo sobre tiles).
   - Fontes e scripts de geração (atlas, TileSet, sala, prévias) fora do projeto, em `Desktop\sprites\fase_terra\atlas_build\` (README com instruções; o processo é determinístico).
+- **Reino das Profundezas: fundo com parallax (3 camadas) — validado manualmente e commitado.** Ver seção 9, "Cenário".
+  - `world/levels/depths/backgrounds/`: `depths_parallax.tscn` (3 `Parallax2D`), `depths_bg_far/mid/near.png` e `depths_bg_palette.png` (12 cores). Instância `Background` na sala de teste, antes do `Terrain`.
+  - `tests/levels/depths_parallax_test.gd` (97 verificações: imagens, paleta, alfa, pixel inteiro, zonas, emendas, importação, cena sem colisões/scripts, ligação com a sala, cobertura real da tela na sala e em salas maiores, configurações gráficas). Executar: `godot --headless --path . -s res://tests/levels/depths_parallax_test.gd`.
+  - Fontes (imagens de IA), conversão, prévias e instalação fora do projeto, em `Desktop\sprites\fase_terra\parallax_build\` (README; processo determinístico).
 
 **Pendente / próximos passos possíveis:**
 - Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
@@ -94,7 +98,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - **Segundo inimigo, Escavador de Cristal (planejamento aprovado em 2026-11-14; 6 etapas):** etapa 1 (base compartilhada: helpers em `Enemy`, direção do golpe, gancho de dano, `finish_active()`) commitada (`73f0b2d`); etapa 2 (cena base, IDLE/PATROL, detecção frontal, visual provisório) implementada e commitada, aguardando validação manual no editor; próxima: etapa 3 (CHARGE → DASH → STUNNED), aguardando aprovação. Ver seção 9, "Inimigos".
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
-- Reino das Profundezas: fundos de parallax (arte nova), props (a referência tem pilares, arco, caixotes, lanterna, cristais, plantas), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
+- Reino das Profundezas: props (a referência tem pilares, arco, caixotes, lanterna, cristais, plantas), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -356,7 +360,18 @@ Linhas = quem procura (mask); colunas = layer do alvo.
   - **Regra deste primeiro conjunto** (não vale para o jogo todo): massas sólidas com espessura mínima de 2 tiles e faixas de 1 tile isoladas, inclusive na diagonal. Junções em T e dois cantos internos no mesmo tile não têm peça (o pincel escolhe a mais próxima). Sem rampas.
   - Bordas da sala: pintar uma moldura de rocha 1 tile fora dos limites da câmera, para que as bordas visíveis usem peças internas.
 - **Plataformas one-way e altura da Terra:** o pulo sobe 56 px e a Terra tem 46 px de altura, então uma plataforma alcançável a partir do chão fica na altura da cabeça de quem anda embaixo. No level design, plataformas sobre chão percorrível ficam a 3 tiles ou mais e são alcançadas a partir de pontos elevados.
-- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Terrain`, `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
+- **Fundo com parallax** (`world/levels/depths/backgrounds/depths_parallax.tscn`, cena reutilizável sem script): raiz `Node2D` com três `Parallax2D` (`Far`, `Mid`, `Near`, nessa ordem), cada um com um `Sprite2D` (`centered` desligado, em (0,0)). Sem colisões. Cada sala instancia a cena como **primeiro filho**, antes do `Terrain`: a ordem na árvore põe o fundo atrás de tudo (`z_index` 0 em todos os nós).
+  - | Camada | Textura | `scroll_scale` | `repeat_size` | Pixel da arte |
+    |---|---|---|---|---|
+    | `Far` (opaca: teto distante, névoa, montanhas) | `depths_bg_far.png` 852x360 | (0,15, 0) | (852, 0) | 4x4 px |
+    | `Mid` (arcos, pilares, estalactites) | `depths_bg_mid.png` 1110x360 | (0,40, 0) | (1110, 0) | 6x6 px |
+    | `Near` (rochas e raízes só no alto e embaixo) | `depths_bg_near.png` 1056x360 | (0,70, 0) | (1056, 0) | 6x6 px |
+  - `repeat_times` 1 (padrão) basta porque cada textura tem pelo menos 640 px de largura. `scroll_scale.y` = 0: as camadas ficam presas à tela na vertical e cobrem os 360 px em salas de qualquer altura. Parallax vertical exigiria imagens com altura 360 + ⌈escala y × (altura da sala − 360)⌉. Comportamento conferido no 4.7.2 com quadros renderizados: na tela, a camada fica deslocada em −(borda esquerda da câmera × escala) módulo largura; a câmera já vem limitada pelos limites da sala; nenhuma coluna fica vazia, nem com a câmera em ±20 000 px.
+  - Paleta (`depths_bg_palette.png`, 4 cores por camada, todas mais escuras que o terreno; luminância máxima 0,082): far `#0d1524 #192841 #263c5c #34527a`; mid `#0e222c #143442 #1b4554 #1f5163`; near `#06090f #0b121b #111a26 #1c1520` (a última é a das raízes).
+  - Zona central limpa: em y 96–288 a camada próxima ocupa no máximo 5% (hoje 3,2%) e a intermediária no máximo 40% (hoje 23%).
+  - Arte: imagens de IA tileáveis na largura inteira, convertidas para a grade real da arte (213x90, 185x60, 176x60 pixels) e ampliadas por fator inteiro (x4/x6). Por isso o fundo tem pixels maiores que o terreno e os personagens (1 px), escolha aprovada. Larguras = largura inteira da arte original, para manter a emenda natural (sem corte nem reparo).
+  - Reconstrução e instalação: `Desktop\sprites\fase_terra\parallax_build\` (README). `build_scene.gd` sobrescreve `depths_parallax.tscn`.
+- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Background` (fundo com parallax), `Terrain`, `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
 
 ### A definir
 
