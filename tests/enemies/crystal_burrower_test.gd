@@ -1,6 +1,7 @@
 extends SceneTree
-## Teste automatizado do Escavador de Cristal (CrystalBurrower), etapa 2: cena, IDLE/PATROL,
-## território, paredes, bordas, detecção frontal, dano e morte provisória.
+## Teste automatizado do Escavador de Cristal (CrystalBurrower), etapas 2 e 3: cena, IDLE/PATROL,
+## território, paredes, bordas, detecção frontal, dano, morte provisória e o ataque
+## (CHARGE → DASH → STUNNED → recarga), incluindo fins antecipados e morte em cada fase.
 ## Cada caso monta um cenário próprio em código.
 ##
 ## Execução (na raiz do projeto), sai com código 0 se tudo passar e 1 se algo falhar:
@@ -21,6 +22,19 @@ const LAYER_PLATFORMS: int = 2
 const LONG_IDLE: float = 100.0
 ## A lista de sobreposições da Area2D é atualizada no passo de física seguinte: ~2 ticks até a leitura.
 const DETECTION_TICKS: int = 4
+## Ataque a 60 ticks/s: preparação 0,6 s, investida 0,75 s a 180 px/s (3 px/tick), vulnerável 1,2 s, recarga 1 s.
+const CHARGE_TICKS: int = 36
+const DASH_TICKS: int = 45
+const DASH_STEP: float = 3.0
+const DASH_RANGE: float = 135.0
+const STUN_TICKS: int = 72
+const COOLDOWN_TICKS: int = 60
+## Recarga longa: mantém os testes de detecção sem iniciar ataques.
+const LONG_COOLDOWN: float = 100.0
+## Pulo sobre a investida: a Terra (100 px à frente) pula quando o Escavador já andou isto,
+## e segura o botão por estes ticks (pulo completo).
+const JUMP_TRIGGER_DX: float = 50.0
+const JUMP_HOLD_TICKS: int = 20
 
 var _failures: int = 0
 var _checks: int = 0
@@ -52,6 +66,21 @@ func _run() -> void:
 	await _test_detection_keeps_patrol()
 	await _test_damage()
 	await _test_death()
+
+	_check_attack_configuration()
+	await _test_full_attack_cycle()
+	await _test_charge_from_patrol()
+	await _test_no_attack_from_behind()
+	await _test_no_charge_in_air()
+	await _test_locked_direction()
+	await _test_dash_wall()
+	await _test_dash_edge()
+	await _test_jump_over_dash()
+	await _test_no_damage_outside_dash()
+	await _test_cooldown_and_new_attack()
+	await _test_death_in_charge()
+	await _test_death_in_dash()
+	await _test_death_in_stunned()
 
 	if _world != null:
 		_world.free()
@@ -211,6 +240,7 @@ func _test_front_detection() -> void:
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
 	var terra: PlayerCharacter = await _spawn_terra(START_X + 60.0)
 	await _wait(DETECTION_TICKS)
 	_check(burrower.is_target_detected() and burrower.get_detected_target() == terra, "Terra 60 px à frente: detectada")
@@ -237,6 +267,7 @@ func _test_detection_facing_left() -> void:
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
 	burrower._set_facing(-1.0)
 	var terra: PlayerCharacter = await _spawn_terra(START_X - 60.0)
 	await _wait(DETECTION_TICKS)
@@ -251,6 +282,7 @@ func _test_detection_height() -> void:
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
 	# Plataforma baixa (24 px): dentro da altura de 40 px.
 	_box(START_X + 40.0, FLOOR_Y - 24.0, START_X + 100.0, FLOOR_Y - 16.0, LAYER_PLATFORMS, true)
 	# Plataforma alta (48 px): acima da área.
@@ -269,6 +301,7 @@ func _test_line_of_sight() -> void:
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
 	var wall: StaticBody2D = _box(START_X + 40.0, FLOOR_Y - 64.0, START_X + 48.0, FLOOR_Y)
 	await _spawn_terra(START_X + 90.0)
 	await _wait(DETECTION_TICKS)
@@ -283,10 +316,11 @@ func _test_line_of_sight() -> void:
 
 
 func _test_detection_keeps_patrol() -> void:
-	print("-- Detecção não inicia ataques (etapa 2)")
+	print("-- Detecção durante a recarga não inicia ataques")
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X)
+	_hold_attacks(burrower)
 	await _spawn_terra(START_X + 100.0)
 	var detected: bool = false
 	var other_state: bool = false
@@ -331,6 +365,7 @@ func _test_death() -> void:
 	await _new_world()
 	_floor(0.0, 1000.0)
 	var burrower: CrystalBurrower = _spawn_burrower(START_X)
+	_hold_attacks(burrower)
 	var hurtbox: Hurtbox = burrower.get_node("Hurtbox") as Hurtbox
 	var health: HealthComponent = burrower.get_node("HealthComponent") as HealthComponent
 	var deaths: Array[int] = [0]
@@ -354,7 +389,387 @@ func _test_death() -> void:
 	_check(not _is_alive(burrower) and ticks <= 10, "some depois do piscar (%d ticks)" % ticks)
 
 
+# --- Ataque (etapa 3) ---------------------------------------------------------------
+
+func _check_attack_configuration() -> void:
+	print("-- Configuração do ataque")
+	var burrower: CrystalBurrower = _burrower_scene.instantiate() as CrystalBurrower
+	var melee: MeleeAttack = burrower.get_node("MeleeAttack") as MeleeAttack
+	var hitbox: Hitbox = burrower.get_node("Visuals/Hitbox") as Hitbox
+	var data: AttackData = melee.attack
+	_check(data != null and data.resource_path.ends_with("crystal_burrower_dash.tres") and data.damage == 1
+		and is_equal_approx(data.windup_time, 0.6) and is_equal_approx(data.active_time, 0.75)
+		and is_equal_approx(data.recovery_time, 1.2),
+		"AttackData próprio: dano 1, preparação 0,6 s, investida até 0,75 s, vulnerável 1,2 s")
+	_check(melee.hitbox == hitbox, "MeleeAttack controla a Visuals/Hitbox (vira junto)")
+	var shape: CollisionShape2D = hitbox.get_node("CollisionShape2D") as CollisionShape2D
+	_check(hitbox.collision_layer == 0 and hitbox.collision_mask == 16 and not hitbox.monitoring
+		and not hitbox.show_debug, "Hitbox sem layer, mask player_hurtbox, desligada, sem desenho de depuração")
+	_check((shape.shape as RectangleShape2D).size == Vector2(28, 14) and shape.position == Vector2(4, -8),
+		"Hitbox 28x14 baixa, cobrindo o corpo (x -10..18, y -15..-1)")
+	_check(is_equal_approx(burrower.dash_speed, 180.0) and is_equal_approx(burrower.cooldown_time, 1.0)
+		and is_equal_approx(burrower.dash_speed * data.active_time, DASH_RANGE),
+		"investida 180 px/s (alcance teórico 135 px), recarga 1 s")
+	burrower.free()
+
+
+func _test_full_attack_cycle() -> void:
+	print("-- Ciclo completo: CHARGE → DASH → STUNNED → IDLE")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var hitbox: Hitbox = _hitbox_of(burrower)
+	var hits: Array[int] = [0]
+	hitbox.hit_landed.connect(func(_hurtbox: Hurtbox) -> void: hits[0] += 1)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 80.0)
+	var waited: int = await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	_check(waited >= 0 and burrower.get_facing() == 1.0 and is_zero_approx(burrower.velocity.x),
+		"Terra à frente: entra em CHARGE, parado e olhando para ela (%d ticks)" % waited)
+	var charge: Dictionary = await _measure_state(burrower, CrystalBurrower.State.CHARGE)
+	_check(charge.ticks == CHARGE_TICKS, "preparação de 0,6 s (%d ticks)" % charge.ticks)
+	_check(is_equal_approx(charge.min_x, START_X) and is_equal_approx(charge.max_x, START_X),
+		"parado durante a preparação")
+	_check(not charge.hitbox_on and _hp(terra) == 5 and hits[0] == 0, "hitbox desligada em toda a preparação; sem dano")
+	_check(charge.colors.has(CrystalBurrower.CRYSTAL_CHARGE) and charge.colors.has(CrystalBurrower.CRYSTAL_NORMAL),
+		"cristais piscam na preparação")
+	_check(burrower.get_state() == CrystalBurrower.State.DASH and hitbox.is_active(),
+		"CHARGE → DASH no tick em que a hitbox liga")
+	var dash: Dictionary = await _measure_state(burrower, CrystalBurrower.State.DASH)
+	var distance: float = dash.last_x - charge.last_x
+	_check(dash.ticks == DASH_TICKS, "duração máxima de 0,75 s (%d ticks)" % dash.ticks)
+	_check(absf(distance - DASH_RANGE) < 0.5, "percorre ~135 px (%.2f px)" % distance)
+	_check(is_equal_approx(dash.min_step, DASH_STEP) and is_equal_approx(dash.max_step, DASH_STEP),
+		"180 px/s constantes (%.2f..%.2f px por tick)" % [dash.min_step, dash.max_step])
+	_check(dash.hitbox_all_on and dash.colors == [CrystalBurrower.CRYSTAL_DASH],
+		"hitbox ligada em toda a investida; cristais no brilho intenso")
+	_check(_hp(terra) == 4 and hits[0] == 1 and dash.last_x > terra.global_position.x + HALF_WIDTH,
+		"atravessa a Terra e causa 1 de dano, um acerto só")
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and not hitbox.is_active(),
+		"tempo máximo: STUNNED com a hitbox desligada")
+	var stun: Dictionary = await _measure_state(burrower, CrystalBurrower.State.STUNNED)
+	_check(stun.ticks == STUN_TICKS, "vulnerável por 1,2 s (%d ticks)" % stun.ticks)
+	_check(is_equal_approx(stun.min_x, dash.last_x) and is_equal_approx(stun.max_x, dash.last_x)
+		and not stun.hitbox_on and stun.colors == [CrystalBurrower.CRYSTAL_STUNNED],
+		"STUNNED: parado, hitbox desligada, cristais apagados")
+	_check(burrower.get_state() == CrystalBurrower.State.IDLE and not burrower.is_attack_ready()
+		and _crystals_of(burrower).self_modulate == CrystalBurrower.CRYSTAL_NORMAL,
+		"STUNNED → IDLE, recarga começando, cristais normais")
+	_check(_hp(terra) == 4 and hits[0] == 1, "um único acerto no ataque inteiro")
+
+
+func _test_charge_from_patrol() -> void:
+	print("-- CHARGE a partir da patrulha")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X)
+	await _spawn_terra(START_X + 150.0)
+	var previous: CrystalBurrower.State = burrower.get_state()
+	var found: bool = false
+	for i: int in IDLE_TICKS + 120:
+		await physics_frame
+		if burrower.get_state() == CrystalBurrower.State.CHARGE:
+			found = true
+			break
+		previous = burrower.get_state()
+	_check(found and previous == CrystalBurrower.State.PATROL, "Terra entra na visão durante a patrulha: PATROL → CHARGE")
+	var x0: float = burrower.global_position.x
+	await _wait(10)
+	_check(burrower.get_state() == CrystalBurrower.State.CHARGE and is_equal_approx(burrower.global_position.x, x0),
+		"para completamente ao preparar")
+
+
+func _test_no_attack_from_behind() -> void:
+	print("-- Sem ataque com a Terra atrás")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X)
+	await _spawn_terra(START_X - 40.0)
+	var attacked: bool = false
+	for i: int in IDLE_TICKS + 90:
+		await physics_frame
+		attacked = attacked or burrower.get_state() == CrystalBurrower.State.CHARGE
+	_check(not attacked and burrower.get_state() == CrystalBurrower.State.PATROL, "Terra 40 px atrás: segue patrulhando")
+
+	await _new_world()
+	_floor(0.0, 1000.0)
+	burrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X - 12.0)
+	await _wait(60)
+	_check(burrower.get_state() == CrystalBurrower.State.IDLE and burrower.get_facing() == 1.0 and _hp(terra) == 5,
+		"Terra encostada atrás: sem ataque, sem virar, sem dano")
+
+
+func _test_no_charge_in_air() -> void:
+	print("-- Sem CHARGE no ar")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y - 60.0, LONG_IDLE)
+	await _spawn_terra(START_X + 60.0)
+	var charged_in_air: bool = false
+	var detected_in_air: bool = false
+	var charged: bool = false
+	for i: int in 60:
+		await physics_frame
+		var in_air: bool = not burrower.is_on_floor()
+		detected_in_air = detected_in_air or (in_air and burrower.is_target_detected())
+		charged_in_air = charged_in_air or (in_air and burrower.get_state() == CrystalBurrower.State.CHARGE)
+		charged = charged or burrower.get_state() == CrystalBurrower.State.CHARGE
+	_check(detected_in_air and not charged_in_air, "vê a Terra caindo, mas não prepara no ar")
+	_check(charged, "prepara depois de pousar")
+
+
+func _test_locked_direction() -> void:
+	print("-- Direção travada")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 80.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	# A Terra passa para trás do Escavador durante a preparação.
+	terra.global_position = Vector2(START_X - 60.0, FLOOR_Y)
+	var charge: Dictionary = await _measure_state(burrower, CrystalBurrower.State.CHARGE)
+	_check(not charge.facing_changed and burrower.get_facing() == 1.0, "Terra passa para trás na preparação: não vira")
+	var dash: Dictionary = await _measure_state(burrower, CrystalBurrower.State.DASH)
+	_check(not dash.facing_changed and dash.last_x > START_X + DASH_RANGE - 1.0 and _hp(terra) == 5,
+		"a investida segue para a direita até o fim (x %.2f), longe da Terra" % dash.last_x)
+
+
+func _test_dash_wall() -> void:
+	print("-- Investida contra parede")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var wall_x: float = START_X + 70.0
+	_box(wall_x, FLOOR_Y - 64.0, wall_x + 16.0, FLOOR_Y)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var hitbox: Hitbox = _hitbox_of(burrower)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 40.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	var charge: Dictionary = await _measure_state(burrower, CrystalBurrower.State.CHARGE)
+	var dash: Dictionary = await _measure_state(burrower, CrystalBurrower.State.DASH)
+	_check(dash.ticks < DASH_TICKS and dash.max_x <= wall_x - HALF_WIDTH + 0.05,
+		"para na parede (x %.2f) antes do tempo máximo (%d ticks)" % [dash.max_x, dash.ticks])
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and not hitbox.is_active(),
+		"parede: STUNNED com a hitbox desligada no mesmo tick")
+	var stun: Dictionary = await _measure_state(burrower, CrystalBurrower.State.STUNNED)
+	_check(stun.ticks == STUN_TICKS and not stun.hitbox_on,
+		"recuperação completa depois da parede: 1,2 s (%d ticks)" % stun.ticks)
+	_check(charge.ticks == CHARGE_TICKS and _hp(terra) == 4, "a Terra entre ele e a parede leva 1 de dano")
+
+
+func _test_dash_edge() -> void:
+	print("-- Investida diante de borda")
+	await _new_world()
+	var edge_x: float = START_X + 60.0
+	_floor(0.0, edge_x)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	await _spawn_terra(START_X + 30.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	await _measure_state(burrower, CrystalBurrower.State.CHARGE)
+	var dash: Dictionary = await _measure_state(burrower, CrystalBurrower.State.DASH)
+	_check(dash.ticks < DASH_TICKS and dash.on_floor and dash.max_x <= edge_x - HALF_WIDTH + DASH_STEP
+		and dash.max_x > edge_x - HALF_WIDTH - DASH_STEP,
+		"para na borda (x %.2f, borda em %.0f), sem cair, em %d ticks" % [dash.max_x, edge_x, dash.ticks])
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and not _hitbox_of(burrower).is_active(),
+		"borda: STUNNED com a hitbox desligada")
+	var stun: Dictionary = await _measure_state(burrower, CrystalBurrower.State.STUNNED)
+	_check(stun.ticks == STUN_TICKS and stun.on_floor, "1,2 s vulnerável, no chão (%d ticks)" % stun.ticks)
+
+
+func _test_jump_over_dash() -> void:
+	print("-- Terra pula sobre a investida")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 100.0)
+	await _wait_state(burrower, CrystalBurrower.State.DASH, 60)
+	while burrower.get_state() == CrystalBurrower.State.DASH and burrower.global_position.x < START_X + JUMP_TRIGGER_DX:
+		await physics_frame
+	Input.action_press("jump")
+	var min_clearance: float = INF
+	var held: int = 0
+	while burrower.get_state() == CrystalBurrower.State.DASH:
+		await physics_frame
+		held += 1
+		if held == JUMP_HOLD_TICKS:
+			Input.action_release("jump")
+		var dx: float = terra.global_position.x - burrower.global_position.x
+		# Sobreposição horizontal entre a hitbox (x -10..18) e a hurtbox da Terra (±7).
+		if dx >= -10.0 - 7.0 and dx <= 18.0 + 7.0:
+			min_clearance = minf(min_clearance, FLOOR_Y - terra.global_position.y)
+	Input.action_release("jump")
+	_check(_hp(terra) == 5 and burrower.global_position.x > terra.global_position.x + HALF_WIDTH
+		and min_clearance > 15.0,
+		"passa por baixo da Terra no ar sem acertá-la (pés a %.1f px do chão, topo da hitbox a 15 px)" % min_clearance)
+
+
+func _test_no_damage_outside_dash() -> void:
+	print("-- Sem dano fora da investida")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var hits: Array[int] = [0]
+	_hitbox_of(burrower).hit_landed.connect(func(_hurtbox: Hurtbox) -> void: hits[0] += 1)
+	# Terra encostada na frente: dentro da área da hitbox desde o início da preparação.
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 8.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	await _measure_state(burrower, CrystalBurrower.State.CHARGE)
+	_check(hits[0] == 0 and _hp(terra) == 5, "sobreposta durante a preparação inteira: sem dano")
+	await _wait_state(burrower, CrystalBurrower.State.STUNNED, 60)
+	_check(hits[0] == 1 and _hp(terra) == 4, "a investida acerta uma vez")
+	# Terra em cima do Escavador vulnerável (a invulnerabilidade dela acaba no meio do STUNNED).
+	terra.global_position = Vector2(burrower.global_position.x + 4.0, FLOOR_Y)
+	await _measure_state(burrower, CrystalBurrower.State.STUNNED)
+	_check(hits[0] == 1 and _hp(terra) == 4, "sobreposta durante STUNNED: sem dano")
+	await _wait(30)
+	_check(hits[0] == 1 and _hp(terra) == 4 and burrower.get_state() == CrystalBurrower.State.IDLE,
+		"sobreposta em IDLE: sem dano por contato")
+
+
+func _test_cooldown_and_new_attack() -> void:
+	print("-- Recarga e nova investida")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 80.0)
+	await _wait_state(burrower, CrystalBurrower.State.STUNNED, 120)
+	var x: float = burrower.global_position.x
+	terra.global_position = Vector2(x - 60.0, FLOOR_Y)
+	await _wait(20)
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and burrower.get_facing() == 1.0
+		and not burrower.is_target_detected(), "STUNNED: não vira para a Terra atrás")
+	terra.global_position = Vector2(x + 60.0, FLOOR_Y)
+	await _wait(20)
+	_check(burrower.get_state() == CrystalBurrower.State.STUNNED and not burrower.is_target_detected(),
+		"STUNNED: Terra à frente não inicia outro ataque")
+	await _wait_state(burrower, CrystalBurrower.State.IDLE, STUN_TICKS)
+	var ticks: int = 0
+	var detected_waiting: bool = false
+	while burrower.get_state() == CrystalBurrower.State.IDLE and ticks < 200:
+		await physics_frame
+		ticks += 1
+		detected_waiting = detected_waiting or (burrower.is_target_detected() and not burrower.is_attack_ready())
+	_check(detected_waiting, "na recarga: vê a Terra, mas não ataca")
+	_check(ticks == COOLDOWN_TICKS and burrower.get_state() == CrystalBurrower.State.CHARGE,
+		"recarga de 1 s contada do fim de STUNNED; depois, nova investida (%d ticks)" % ticks)
+
+
+func _test_death_in_charge() -> void:
+	print("-- Morte em CHARGE")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 20.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	await _wait(10)
+	await _kill_and_check(burrower, terra, 5, "CHARGE")
+
+
+func _test_death_in_dash() -> void:
+	print("-- Morte em DASH")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 60.0)
+	await _wait_state(burrower, CrystalBurrower.State.DASH, 60)
+	await physics_frame
+	await _kill_and_check(burrower, terra, 5, "DASH")
+
+
+func _test_death_in_stunned() -> void:
+	print("-- Morte em STUNNED")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	var terra: PlayerCharacter = await _spawn_terra(START_X + 80.0)
+	await _wait_state(burrower, CrystalBurrower.State.STUNNED, 120)
+	await _wait(10)
+	await _kill_and_check(burrower, terra, 4, "STUNNED")
+
+
+## Mata o Escavador e confirma que nada mais acontece: parado, hitbox e ataque desligados,
+## sem novas transições nem dano à Terra até sumir.
+func _kill_and_check(burrower: CrystalBurrower, terra: PlayerCharacter, terra_hp: int, label: String) -> void:
+	var hitbox: Hitbox = _hitbox_of(burrower)
+	var melee: MeleeAttack = burrower.get_node("MeleeAttack") as MeleeAttack
+	(burrower.get_node("Hurtbox") as Hurtbox).receive_hit(10)
+	_check(burrower.get_state() == CrystalBurrower.State.DEAD and is_zero_approx(burrower.velocity.x)
+		and not hitbox.is_active() and melee.process_mode == Node.PROCESS_MODE_DISABLED
+		and not burrower.is_physics_processing() and not burrower.is_target_detected()
+		and _crystals_of(burrower).self_modulate == CrystalBurrower.CRYSTAL_NORMAL,
+		"morte em %s: DEAD, parado, hitbox e ataque desligados" % label)
+	var x0: float = burrower.global_position.x
+	var moved: bool = false
+	var other_state: bool = false
+	var ticks: int = 0
+	while ticks < 60:
+		await physics_frame
+		ticks += 1
+		if not _is_alive(burrower):
+			continue
+		moved = moved or not is_equal_approx(burrower.global_position.x, x0)
+		other_state = other_state or burrower.get_state() != CrystalBurrower.State.DEAD
+		other_state = other_state or hitbox.is_active()
+	_check(not moved and not other_state and _hp(terra) == terra_hp and not _is_alive(burrower),
+		"morte em %s: sem movimento, transições ou dano depois; some (vida da Terra %d)" % [label, _hp(terra)])
+
+
 # --- Utilidades -------------------------------------------------------------------
+
+func _hold_attacks(burrower: CrystalBurrower) -> void:
+	burrower._cooldown_left = LONG_COOLDOWN
+
+
+func _hitbox_of(burrower: CrystalBurrower) -> Hitbox:
+	return burrower.get_node("Visuals/Hitbox") as Hitbox
+
+
+func _crystals_of(burrower: CrystalBurrower) -> CanvasItem:
+	return burrower.get_node("Visuals/Crystals") as CanvasItem
+
+
+## Espera até o Escavador entrar no estado (no máximo max_ticks). Retorna os ticks esperados, ou -1.
+func _wait_state(burrower: CrystalBurrower, state: CrystalBurrower.State, max_ticks: int) -> int:
+	var ticks: int = 0
+	while _is_alive(burrower) and burrower.get_state() != state:
+		if ticks >= max_ticks:
+			return -1
+		await physics_frame
+		ticks += 1
+	return ticks if _is_alive(burrower) else -1
+
+
+## Acompanha o estado atual até ele terminar (deve ser chamado com o Escavador já nele).
+## ticks = ticks observados no estado; last_x = posição no último deles; passos entre ticks;
+## hitbox_on = ligada (ou monitorando) em algum tick; hitbox_all_on = ligada em todos;
+## colors = cores distintas dos cristais.
+func _measure_state(burrower: CrystalBurrower, state: CrystalBurrower.State, max_ticks: int = 300) -> Dictionary:
+	var hitbox: Hitbox = _hitbox_of(burrower)
+	var crystals: CanvasItem = _crystals_of(burrower)
+	var facing: float = burrower.get_facing()
+	var x: float = burrower.global_position.x
+	var result: Dictionary = {
+		"ticks": 0, "last_x": x, "min_x": x, "max_x": x, "min_step": INF, "max_step": -INF,
+		"hitbox_on": false, "hitbox_all_on": true, "facing_changed": false, "colors": [], "on_floor": true,
+	}
+	while _is_alive(burrower) and burrower.get_state() == state and result.ticks < max_ticks:
+		x = burrower.global_position.x
+		if result.ticks > 0:
+			var step: float = absf(x - result.last_x)
+			result.min_step = minf(result.min_step, step)
+			result.max_step = maxf(result.max_step, step)
+		result.ticks += 1
+		result.last_x = x
+		result.min_x = minf(result.min_x, x)
+		result.max_x = maxf(result.max_x, x)
+		result.hitbox_on = result.hitbox_on or hitbox.is_active() or hitbox.monitoring
+		result.hitbox_all_on = result.hitbox_all_on and hitbox.is_active()
+		result.facing_changed = result.facing_changed or burrower.get_facing() != facing
+		result.on_floor = result.on_floor and burrower.is_on_floor()
+		if not (result.colors as Array).has(crystals.self_modulate):
+			(result.colors as Array).append(crystals.self_modulate)
+		await physics_frame
+	return result
+
 
 func _check(condition: bool, message: String) -> void:
 	_checks += 1

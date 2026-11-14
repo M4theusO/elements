@@ -4,8 +4,11 @@ extends Enemy
 ## patrulha lenta (PATROL) dentro do território; ao chegar a um limite (fim do território,
 ## parede ou borda) para, espera a pausa e só então vira. Vê a Terra apenas à frente
 ## (DetectionArea dentro de Visuals, que vira com ele) e com linha de visão livre.
-## Etapa atual: a detecção só é registrada (get_detected_target()); ainda não inicia ataques.
-## CHARGE, DASH e STUNNED existem no enum, mas ainda não têm comportamento.
+## Ao ver a Terra (com a recarga pronta e no chão), ataca com uma investida longa, conduzida
+## pelo MeleeAttack: preparação parada (CHARGE) → investida que atravessa a Terra (DASH,
+## hitbox ligada) → vulnerável e parado (STUNNED) → IDLE, com recarga a partir daí.
+## Cada estado do ataque é uma fase do MeleeAttack (AttackData crystal_burrower_dash.tres):
+## windup_time = CHARGE, active_time = duração máxima do DASH, recovery_time = STUNNED.
 
 enum State { IDLE, PATROL, CHARGE, DASH, STUNNED, DEAD }
 
@@ -13,12 +16,22 @@ enum State { IDLE, PATROL, CHARGE, DASH, STUNNED, DEAD }
 const TIME_EPSILON: float = 0.0001
 ## Folga de posição para considerar o limite do território atingido.
 const POSITION_EPSILON: float = 0.01
+## Diferença horizontal mínima para virar na direção do alvo ao iniciar o ataque.
+const FACE_TARGET_MIN_DX: float = 0.1
+
+## Feedback provisório nos cristais (self_modulate de Visuals/Crystals), até as animações.
+## CHARGE pisca entre o normal e o brilho; DASH fica no brilho intenso; STUNNED fica apagado.
+const CRYSTAL_NORMAL: Color = Color.WHITE
+const CRYSTAL_CHARGE: Color = Color(1.6, 1.6, 1.6)
+const CRYSTAL_DASH: Color = Color(2.2, 2.2, 2.2)
+const CRYSTAL_STUNNED: Color = Color(0.45, 0.45, 0.45)
+const CRYSTAL_BLINK_INTERVAL: float = 0.1
 
 @export_group("Patrulha")
 @export_range(0.0, 200.0, 1.0, "suffix:px/s") var patrol_speed: float = 25.0
 ## Distância máxima, para cada lado, do ponto onde o inimigo nasceu.
 @export_range(0.0, 512.0, 1.0, "suffix:px") var patrol_distance: float = 64.0
-## Pausa parada em IDLE (no início e a cada limite da patrulha).
+## Pausa parada em IDLE (no início, a cada limite da patrulha e depois de STUNNED).
 @export_range(0.0, 10.0, 0.05, "suffix:s") var idle_time: float = 1.0
 
 @export_group("Detecção")
@@ -26,6 +39,13 @@ const POSITION_EPSILON: float = 0.01
 ## Altura dos olhos (acima dos pés) e do ponto mirado no alvo para a linha de visão.
 @export_range(0.0, 64.0, 1.0, "suffix:px") var eye_height: float = 10.0
 @export_range(0.0, 64.0, 1.0, "suffix:px") var target_sight_height: float = 16.0
+
+@export_group("Investida")
+## Dano e durações ficam no AttackData do MeleeAttack. Alcance máximo teórico:
+## dash_speed x active_time (180 x 0,75 = 135 px).
+@export_range(0.0, 1000.0, 1.0, "suffix:px/s") var dash_speed: float = 180.0
+## Tempo sem iniciar outra investida, contado a partir do fim de STUNNED.
+@export_range(0.0, 10.0, 0.05, "suffix:s") var cooldown_time: float = 1.0
 
 @export_group("Física")
 @export_range(0.0, 2000.0, 1.0, "suffix:px/s") var max_fall_speed: float = 360.0
@@ -40,8 +60,14 @@ var _idle_left: float = 0.0
 var _turn_after_idle: bool = false
 var _patrol_origin_x: float = 0.0
 var _detected_target: Node2D
+var _cooldown_left: float = 0.0
+## Tempo desde o início de CHARGE (só para o piscar dos cristais).
+var _charge_elapsed: float = 0.0
 
 @onready var _detection_area: Area2D = $Visuals/DetectionArea
+@onready var _melee_attack: MeleeAttack = $MeleeAttack
+@onready var _hitbox: Hitbox = $Visuals/Hitbox
+@onready var _crystals: CanvasItem = $Visuals/Crystals
 
 
 func _ready() -> void:
@@ -51,19 +77,33 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	# MeleeAttack roda antes (prioridade -1): a fase lida aqui já é a deste tick.
+	_cooldown_left = maxf(_cooldown_left - delta, 0.0)
 	_apply_gravity(delta, max_fall_speed)
 	match _state:
 		State.IDLE:
 			_update_idle(delta)
 		State.PATROL:
 			_update_patrol(delta)
+		State.CHARGE:
+			_update_charge(delta)
+		State.DASH:
+			_update_dash(delta)
+		State.STUNNED:
+			_update_stunned()
 		_:
 			velocity.x = 0.0
 	move_and_slide()
-	# Parede à frente durante a patrulha: limite atingido.
-	if _state == State.PATROL and is_on_wall() and get_wall_normal().x * get_facing() < 0.0:
-		_enter_idle(true)
+	# Parede à frente: limite da patrulha ou fim antecipado da investida. A Hitbox (filha)
+	# roda depois deste nó no mesmo tick, então já encontra a hitbox desligada.
+	if is_on_wall() and get_wall_normal().x * get_facing() < 0.0:
+		if _state == State.PATROL:
+			_enter_idle(true)
+		elif _state == State.DASH:
+			_end_dash_early()
 	_update_detection()
+	_try_start_charge()
+	_update_crystals()
 
 
 func get_state() -> State:
@@ -75,7 +115,7 @@ func get_patrol_origin_x() -> float:
 
 
 ## Terra vista neste tick (à frente, dentro da área e com linha de visão), ou null.
-## Atualizada no fim de cada tick em IDLE e PATROL.
+## Atualizada no fim de cada tick em IDLE e PATROL (null nos outros estados).
 func get_detected_target() -> Node2D:
 	return _detected_target
 
@@ -84,12 +124,21 @@ func is_target_detected() -> bool:
 	return _detected_target != null
 
 
+## A recarga terminou (pode iniciar uma investida ao ver a Terra).
+func is_attack_ready() -> bool:
+	return _cooldown_left <= TIME_EPSILON
+
+
 func _on_death() -> void:
 	_state = State.DEAD
 	_detected_target = null
 	velocity = Vector2.ZERO
 	set_physics_process(false)
+	# Um ataque em andamento não pode ligar a hitbox nem avançar de fase depois da morte.
+	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
+	_hitbox.deactivate()
 	_detection_area.set_deferred("monitoring", false)
+	_crystals.self_modulate = CRYSTAL_NORMAL
 
 
 func _enter_idle(turn_after: bool) -> void:
@@ -136,3 +185,81 @@ func _update_detection() -> void:
 		if _has_line_of_sight(body, eye_height, target_sight_height, sight_mask):
 			_detected_target = body
 			return
+
+
+## Chamado no fim do tick, logo depois da detecção (que já confirmou a linha de visão).
+## A preparação do MeleeAttack começa a contar no tick seguinte: CHARGE dura exatamente windup_time.
+func _try_start_charge() -> void:
+	if _state != State.IDLE and _state != State.PATROL:
+		return
+	if _detected_target == null or is_dead() or not is_on_floor() or not is_attack_ready():
+		return
+	if not _melee_attack.try_attack():
+		return
+	# Vira para a Terra uma única vez; a direção fica travada até o fim do ataque.
+	var dx: float = _detected_target.global_position.x - global_position.x
+	if absf(dx) > FACE_TARGET_MIN_DX:
+		_set_facing(signf(dx))
+	_state = State.CHARGE
+	_charge_elapsed = 0.0
+	velocity.x = 0.0
+
+
+func _update_charge(delta: float) -> void:
+	# A hitbox liga quando o MeleeAttack entra na fase ativa: começa a investida neste tick.
+	if _hitbox.is_active():
+		_state = State.DASH
+		_update_dash(delta)
+		return
+	_charge_elapsed += delta
+	velocity.x = 0.0
+
+
+func _update_dash(delta: float) -> void:
+	# Fase ativa esgotada (tempo máximo): o MeleeAttack já desligou a hitbox e está na recuperação.
+	if not _hitbox.is_active():
+		_enter_stunned()
+		return
+	if not is_on_floor():
+		velocity.x = 0.0
+		return
+	var facing: float = get_facing()
+	# Borda à frente: para antes de dar o passo que o tiraria do chão.
+	if not _has_ground_ahead(facing, dash_speed * delta, ground_mask):
+		_end_dash_early()
+		return
+	velocity.x = facing * dash_speed
+
+
+## Parede ou borda: encerra a fase ativa agora (hitbox desligada na hora) e começa
+## a recuperação completa (STUNNED) a partir deste tick.
+func _end_dash_early() -> void:
+	_melee_attack.finish_active()
+	_enter_stunned()
+
+
+func _enter_stunned() -> void:
+	_state = State.STUNNED
+	velocity.x = 0.0
+
+
+func _update_stunned() -> void:
+	velocity.x = 0.0
+	if _melee_attack.is_busy():
+		return
+	# Fim da recuperação: volta a IDLE e só então começa a recarga.
+	_cooldown_left = cooldown_time
+	_enter_idle(false)
+
+
+func _update_crystals() -> void:
+	match _state:
+		State.CHARGE:
+			var lit: bool = int(_charge_elapsed / CRYSTAL_BLINK_INTERVAL) % 2 == 0
+			_crystals.self_modulate = CRYSTAL_CHARGE if lit else CRYSTAL_NORMAL
+		State.DASH:
+			_crystals.self_modulate = CRYSTAL_DASH
+		State.STUNNED:
+			_crystals.self_modulate = CRYSTAL_STUNNED
+		_:
+			_crystals.self_modulate = CRYSTAL_NORMAL
