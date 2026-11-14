@@ -22,7 +22,8 @@ const POSITION_EPSILON: float = 0.01
 ## Diferença horizontal mínima para virar na direção do alvo ao iniciar o ataque.
 const FACE_TARGET_MIN_DX: float = 0.1
 
-## Feedback provisório nos cristais (self_modulate de Visuals/Crystals), até as animações.
+## Feedback provisório do ataque no self_modulate do sprite (Visuals/AnimatedSprite2D), até as
+## animações próprias de cada estado; o clarão de dano usa Visuals.modulate e se soma a este.
 ## CHARGE pisca entre o normal e o brilho; DASH fica no brilho intenso; STUNNED fica apagado.
 const CRYSTAL_NORMAL: Color = Color.WHITE
 const CRYSTAL_CHARGE: Color = Color(1.6, 1.6, 1.6)
@@ -82,7 +83,7 @@ var _react_left: float = 0.0
 @onready var _carapace: CarapaceHurtbox = $Hurtbox
 @onready var _melee_attack: MeleeAttack = $MeleeAttack
 @onready var _hitbox: Hitbox = $Visuals/Hitbox
-@onready var _crystals: CanvasItem = $Visuals/Crystals
+@onready var _state_tint: CanvasItem = $Visuals/AnimatedSprite2D
 
 
 func _ready() -> void:
@@ -131,7 +132,7 @@ func _physics_process(delta: float) -> void:
 	# A reação a um golpe tem prioridade sobre a detecção: não inicia o ataque enquanto dura.
 	if not reacting:
 		_try_start_charge()
-	_update_crystals()
+	_update_state_tint()
 
 
 func get_state() -> State:
@@ -175,7 +176,7 @@ func _on_death() -> void:
 	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
 	_hitbox.deactivate()
 	_detection_area.set_deferred("monitoring", false)
-	_crystals.self_modulate = CRYSTAL_NORMAL
+	_state_tint.self_modulate = CRYSTAL_NORMAL
 
 
 ## Clarão do dano aplicado: lilás se o golpe acertou a carapaça, o branco da base nos outros
@@ -336,14 +337,14 @@ func _update_stunned() -> void:
 	_enter_idle(false)
 
 
-func _update_crystals() -> void:
+func _update_state_tint() -> void:
 	match _state:
 		State.CHARGE:
 			var lit: bool = int(_charge_elapsed / CRYSTAL_BLINK_INTERVAL) % 2 == 0
-			_crystals.self_modulate = CRYSTAL_CHARGE if lit else CRYSTAL_NORMAL
+			_state_tint.self_modulate = CRYSTAL_CHARGE if lit else CRYSTAL_NORMAL
 		State.DASH:
-			_crystals.self_modulate = CRYSTAL_DASH
+			_state_tint.self_modulate = CRYSTAL_DASH
 		State.STUNNED:
-			_crystals.self_modulate = CRYSTAL_STUNNED
+			_state_tint.self_modulate = CRYSTAL_STUNNED
 		_:
-			_crystals.self_modulate = CRYSTAL_NORMAL
+			_state_tint.self_modulate = CRYSTAL_NORMAL

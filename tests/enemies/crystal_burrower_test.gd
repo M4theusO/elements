@@ -2,7 +2,8 @@ extends SceneTree
 ## Teste automatizado do Escavador de Cristal (CrystalBurrower), etapas 2 e 3: cena, IDLE/PATROL,
 ## território, paredes, bordas, detecção frontal, dano, morte provisória e o ataque
 ## (CHARGE → DASH → STUNNED → recarga), incluindo fins antecipados e morte em cada fase;
-## etapa 4: carapaça (dano pelas costas reduzido, acumulador fracionário), reação a golpes e feedback.
+## etapa 4: carapaça (dano pelas costas reduzido, acumulador fracionário), reação a golpes e feedback;
+## etapa 5A: folha idle (formato, transparência, alinhamento), SpriteFrames e sprite na cena.
 ## Cada caso monta um cenário próprio em código.
 ##
 ## Execução (na raiz do projeto), sai com código 0 se tudo passar e 1 se algo falhar:
@@ -38,6 +39,16 @@ const JUMP_TRIGGER_DX: float = 50.0
 const JUMP_HOLD_TICKS: int = 20
 ## Reação a golpe em IDLE/PATROL: 0,25 s parado.
 const REACT_TICKS: int = 15
+## Sprites (mesmo padrão do Fragmento Vivo): quadros 64x48 olhando para a direita, pés na linha
+## y = 44, centro em x = 32 (offset (-32,-45), centered desligado).
+const FRAMES_PATH: String = "res://entities/enemies/crystal_burrower/crystal_burrower_sprite_frames.tres"
+const IDLE_SHEET_PATH: String = "res://entities/enemies/crystal_burrower/sprites/crystal_burrower_idle.png"
+const FRAME_W: int = 64
+const FRAME_H: int = 48
+const IDLE_FRAMES: int = 6
+const FEET_ROW: int = 44
+const SPRITE_CENTER_X: int = 32
+const MAX_PALETTE: int = 24
 
 var _failures: int = 0
 var _checks: int = 0
@@ -98,6 +109,10 @@ func _run() -> void:
 	await _test_real_terra_hits_from_behind()
 	await _test_death_with_carapace()
 
+	_check_idle_sprite_sheet()
+	_check_sprite_frames()
+	await _test_sprite_in_game()
+
 	if _world != null:
 		_world.free()
 	print("== Resultado: %s (%d verificações, %d falha(s))" % [
@@ -135,9 +150,9 @@ func _check_static_configuration() -> void:
 		and is_equal_approx(burrower.idle_time, 1.0), "patrulha 25 px/s, território ±64 px, pausa 1 s")
 	_check(burrower.ground_mask == LAYER_WORLD | LAYER_PLATFORMS and burrower.sight_mask == 65,
 		"ground_mask world + platforms; sight_mask world + destructibles")
-	_check(burrower.get_node_or_null("Visuals/AnimatedSprite2D") == null
-		and burrower.get_node("Visuals/Body") is Polygon2D and burrower.get_node("Visuals/Crystals") is Polygon2D
-		and burrower.get_node("Visuals/Eye") is Polygon2D, "visual provisório: Polygon2D (corpo, cristais, olho)")
+	var visual_children: Array = burrower.get_node("Visuals").get_children().map(func(n: Node) -> String: return n.get_class())
+	_check(burrower.get_node_or_null("Visuals/AnimatedSprite2D") is AnimatedSprite2D and not visual_children.has("Polygon2D"),
+		"visual: Visuals/AnimatedSprite2D (Polygon2D provisórios removidos)")
 	_check(CrystalBurrower.State.keys() == ["IDLE", "PATROL", "CHARGE", "DASH", "STUNNED", "DEAD"],
 		"estados: IDLE, PATROL, CHARGE, DASH, STUNNED, DEAD")
 	burrower.free()
@@ -1030,6 +1045,142 @@ func _test_death_with_carapace() -> void:
 	_check(not _is_alive(burrower), "some depois do piscar (%d ticks)" % ticks)
 
 
+# --- Sprites (etapa 5A) ---------------------------------------------------------------
+
+func _check_idle_sprite_sheet() -> void:
+	print("-- Folha idle")
+	var image: Image = (load(IDLE_SHEET_PATH) as Texture2D).get_image()
+	image.decompress()
+	_check(image.get_width() == FRAME_W * IDLE_FRAMES and image.get_height() == FRAME_H,
+		"%dx%d = 6 quadros de 64x48" % [image.get_width(), image.get_height()])
+	var partial_alpha: int = 0
+	var colors: Dictionary = {}
+	for y: int in image.get_height():
+		for x: int in image.get_width():
+			var c: Color = image.get_pixel(x, y)
+			if c.a8 != 0 and c.a8 != 255:
+				partial_alpha += 1
+			if c.a8 == 255:
+				colors[c.to_rgba32()] = true
+	_check(partial_alpha == 0, "transparência binária (fundo 100% transparente, sem bordas semitransparentes)")
+	_check(colors.size() <= MAX_PALETTE, "paleta única de %d cores (máx. %d)" % [colors.size(), MAX_PALETTE])
+	var boxes: Array[Rect2i] = []
+	var feet_pixels: Array[int] = []
+	for i: int in IDLE_FRAMES:
+		var box: Rect2i = image.get_region(Rect2i(i * FRAME_W, 0, FRAME_W, FRAME_H)).get_used_rect()
+		boxes.append(box)
+		var feet: int = 0
+		for x: int in FRAME_W:
+			if image.get_pixel(i * FRAME_W + x, FEET_ROW).a8 == 255:
+				feet += 1
+		feet_pixels.append(feet)
+	var bottoms_ok: bool = true
+	var margins_ok: bool = true
+	var min_left: int = FRAME_W
+	var max_left: int = 0
+	var min_right: int = FRAME_W
+	var max_right: int = 0
+	var min_h: int = FRAME_H
+	var max_h: int = 0
+	for i: int in IDLE_FRAMES:
+		var box: Rect2i = boxes[i]
+		# Pelo menos um pé apoiado (nos quadros 2 e 3 a pata da frente se ergue na própria arte).
+		bottoms_ok = bottoms_ok and box.end.y - 1 == FEET_ROW and feet_pixels[i] >= 3
+		margins_ok = margins_ok and box.position.x > 0 and box.end.x < FRAME_W and box.position.y > 0
+		min_left = mini(min_left, box.position.x)
+		max_left = maxi(max_left, box.position.x)
+		min_right = mini(min_right, box.end.x)
+		max_right = maxi(max_right, box.end.x)
+		min_h = mini(min_h, box.size.y)
+		max_h = maxi(max_h, box.size.y)
+	_check(bottoms_ok, "pés na linha y = 44 em todos os quadros (%s px de apoio)" % str(feet_pixels))
+	_check(margins_ok, "nenhum quadro encosta nas bordas: criatura inteira, sem cortes")
+	var center: float = (min_left + max_right) / 2.0
+	_check(absf(center - SPRITE_CENTER_X) <= 1.0 and max_left - min_left <= 1 and max_right - min_right <= 1,
+		"parada na horizontal e centrada em x = 32 (esquerda %d..%d, direita %d..%d)" % [min_left, max_left, min_right, max_right])
+	_check(min_h >= 30 and max_h <= 40 and max_h > min_h,
+		"altura %d..%d px (cristais respiram), largura ~%d px" % [min_h, max_h, max_right - min_left])
+	var distinct: Dictionary = {}
+	for i: int in IDLE_FRAMES:
+		distinct[image.get_region(Rect2i(i * FRAME_W, 0, FRAME_W, FRAME_H)).get_data()] = true
+	_check(distinct.size() == IDLE_FRAMES, "6 quadros diferentes entre si")
+	# A criatura olha para a direita: os cristais (roxos, saturados) ficam nas costas, à esquerda do centro.
+	var crystals_left: bool = true
+	var centroids: Array[float] = []
+	for i: int in IDLE_FRAMES:
+		var sum_x: float = 0.0
+		var count: int = 0
+		for y: int in FRAME_H:
+			for x: int in FRAME_W:
+				var c: Color = image.get_pixel(i * FRAME_W + x, y)
+				if c.a8 == 255 and c.s > 0.4 and c.v > 0.5 and c.b > c.g and c.r > c.g:
+					sum_x += x
+					count += 1
+		var centroid: float = sum_x / maxi(count, 1)
+		centroids.append(snappedf(centroid, 0.1))
+		crystals_left = crystals_left and count > 0 and centroid < SPRITE_CENTER_X
+	_check(crystals_left, "olha para a direita: cristais nas costas, à esquerda (x médio %s)" % str(centroids))
+
+
+func _check_sprite_frames() -> void:
+	print("-- SpriteFrames")
+	var frames: SpriteFrames = load(FRAMES_PATH) as SpriteFrames
+	_check(frames != null and Array(frames.get_animation_names()) == ["idle"], "só a animação idle")
+	_check(frames.get_frame_count(&"idle") == IDLE_FRAMES and frames.get_animation_loop(&"idle")
+		and is_equal_approx(frames.get_animation_speed(&"idle"), 6.0), "idle: 6 quadros, loop, 6 FPS (ciclo de 1 s)")
+	var regions_ok: bool = true
+	for i: int in IDLE_FRAMES:
+		var atlas: AtlasTexture = frames.get_frame_texture(&"idle", i) as AtlasTexture
+		regions_ok = (regions_ok and atlas != null and atlas.atlas.resource_path == IDLE_SHEET_PATH
+			and atlas.region == Rect2(i * FRAME_W, 0, FRAME_W, FRAME_H)
+			and is_equal_approx(frames.get_frame_duration(&"idle", i), 1.0))
+	_check(regions_ok, "quadros em ordem: regiões 64x48 da folha idle, duração 1")
+	_check(ProjectSettings.get_setting("rendering/textures/canvas_textures/default_texture_filter") == 0,
+		"filtro Nearest (padrão do projeto, herdado pelo sprite)")
+
+
+func _test_sprite_in_game() -> void:
+	print("-- Sprite na cena")
+	await _new_world()
+	_floor(0.0, 1000.0)
+	var burrower: CrystalBurrower = _spawn_burrower(START_X, FLOOR_Y, LONG_IDLE)
+	_hold_attacks(burrower)
+	var sprite: AnimatedSprite2D = burrower.get_node("Visuals/AnimatedSprite2D") as AnimatedSprite2D
+	await _wait(2)
+	_check(sprite.sprite_frames.resource_path == FRAMES_PATH and sprite.autoplay == "idle"
+		and sprite.animation == &"idle" and sprite.is_playing()
+		and sprite.texture_filter == CanvasItem.TEXTURE_FILTER_PARENT_NODE,
+		"AnimatedSprite2D toca idle sozinho (autoplay), filtro herdado")
+	_check(not sprite.centered and sprite.offset == Vector2(-32, -45) and sprite.position == Vector2.ZERO,
+		"offset (-32,-45): centro x = 32 na origem, base da linha 44 nos pés")
+	var feet_world_y: float = sprite.global_position.y + sprite.offset.y + FEET_ROW + 1
+	_check(burrower.is_on_floor() and is_equal_approx(feet_world_y, FLOOR_Y),
+		"pés do desenho no chão (y %.1f, chão %.0f)" % [feet_world_y, FLOOR_Y])
+	var changes: int = 0
+	var last: int = sprite.frame
+	for i: int in 60:
+		await physics_frame
+		if sprite.frame != last:
+			changes += 1
+			last = sprite.frame
+	_check(changes >= 5 and changes <= 7, "6 FPS em loop (%d trocas de quadro em 1 s)" % changes)
+	burrower._set_facing(-1.0)
+	_check(sprite.get_global_transform().x.x < 0.0 and not sprite.flip_h,
+		"vira junto com Visuals (escala -1), sem flip_h próprio")
+	burrower._set_facing(1.0)
+	# Compatível com os estados: o idle continua durante o ataque; o feedback provisório vai no sprite.
+	burrower._cooldown_left = 0.0
+	await _spawn_terra(START_X + 80.0)
+	await _wait_state(burrower, CrystalBurrower.State.CHARGE, 20)
+	await _wait(2)
+	var charge_ok: bool = sprite.animation == &"idle" and sprite.is_playing()
+	await _wait_state(burrower, CrystalBurrower.State.DASH, 60)
+	var dash_ok: bool = sprite.animation == &"idle" and sprite.self_modulate == CrystalBurrower.CRYSTAL_DASH
+	await _wait_state(burrower, CrystalBurrower.State.STUNNED, 60)
+	var stunned_ok: bool = sprite.animation == &"idle" and sprite.self_modulate == CrystalBurrower.CRYSTAL_STUNNED
+	_check(charge_ok and dash_ok and stunned_ok, "CHARGE/DASH/STUNNED: idle segue tocando, feedback provisório no sprite")
+
+
 # --- Utilidades -------------------------------------------------------------------
 
 ## Escavador parado (pausa longa) e sem atacar, já no chão.
@@ -1088,7 +1239,8 @@ func _hitbox_of(burrower: CrystalBurrower) -> Hitbox:
 
 
 func _crystals_of(burrower: CrystalBurrower) -> CanvasItem:
-	return burrower.get_node("Visuals/Crystals") as CanvasItem
+	# Feedback provisório do ataque: self_modulate do sprite inteiro (até as animações dos estados).
+	return burrower.get_node("Visuals/AnimatedSprite2D") as CanvasItem
 
 
 ## Espera até o Escavador entrar no estado (no máximo max_ticks). Retorna os ticks esperados, ou -1.

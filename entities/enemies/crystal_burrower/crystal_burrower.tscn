@@ -6,6 +6,7 @@
 [ext_resource type="Script" path="res://core/components/hitbox.gd" id="4_hitbox"]
 [ext_resource type="Script" path="res://core/components/melee_attack.gd" id="5_melee"]
 [ext_resource type="Resource" path="res://entities/enemies/crystal_burrower/crystal_burrower_dash.tres" id="6_dash"]
+[ext_resource type="SpriteFrames" path="res://entities/enemies/crystal_burrower/crystal_burrower_sprite_frames.tres" id="7_frames"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
 size = Vector2(32, 20)
@@ -32,21 +33,12 @@ shape = SubResource("RectangleShape2D_body")
 
 [node name="Visuals" type="Node2D" parent="."]
 
-[node name="Crystals" type="Polygon2D" parent="Visuals"]
-color = Color(0.62, 0.3, 0.85, 1)
-polygon = PackedVector2Array(-15, -12, -13, -24, -9, -16, -5, -29, -1, -17, 3, -24, 6, -15, 6, -12)
-
-[node name="Body" type="Polygon2D" parent="Visuals"]
-color = Color(0.5, 0.34, 0.22, 1)
-polygon = PackedVector2Array(-17, -2, -17, -10, -11, -17, 0, -20, 10, -17, 16, -11, 17, -2)
-
-[node name="Legs" type="Polygon2D" parent="Visuals"]
-color = Color(0.24, 0.15, 0.17, 1)
-polygon = PackedVector2Array(-14, 0, -14, -3, 15, -3, 15, 0)
-
-[node name="Eye" type="Polygon2D" parent="Visuals"]
-color = Color(0.85, 0.45, 1, 1)
-polygon = PackedVector2Array(10, -11, 14, -11, 14, -8, 10, -8)
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="Visuals"]
+sprite_frames = ExtResource("7_frames")
+animation = &"idle"
+autoplay = "idle"
+centered = false
+offset = Vector2(-32, -45)
 
 [node name="DetectionArea" type="Area2D" parent="Visuals"]
 collision_layer = 0
