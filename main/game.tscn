@@ -1,0 +1,26 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://main/game.gd" id="1_game"]
+[ext_resource type="PackedScene" path="res://entities/characters/terra/terra.tscn" id="2_terra"]
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="RoomSlot" type="Node2D" parent="."]
+
+[node name="Terra" parent="." instance=ExtResource("2_terra")]
+
+[node name="Camera2D" type="Camera2D" parent="Terra"]
+
+[node name="Fade" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="ColorRect" type="ColorRect" parent="Fade"]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
