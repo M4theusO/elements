@@ -98,6 +98,12 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `world/props/depths/vegetation/`: 6 PNGs + 6 cenas `Sprite2D`. 8 instâncias no `Props` da sala, depois dos cristais.
   - `tests/props/depths_vegetation_test.gd` (114 verificações: cores por sprite, imagens, âncoras, importação, cenas sem script/colisão, apoio no desenho real do terreno, superfícies jogáveis livres, altura livre sob peças penduradas, regras do caminho principal, preservação). Executar: `godot --headless --path . -s res://tests/props/depths_vegetation_test.gd`. O teste dos cristais passou a aceitar outras famílias no `Props` (só cenas de `world/props/depths/`).
   - Sala: o `LivingFragmentPlatform` foi movido no editor (2026-11-14, aprovado) da plataforma larga para o chão em (302, 316), ao pé do 1º degrau; testes da sala, do parallax e dos props atualizados. A cobertura de inimigo sobre plataforma one-way no teste da sala vem de um Fragmento extra criado só no teste.
+  - Observação visual (sem ação decidida): na patrulha (x 254–343), esse Fragmento passa na frente do `CrystalSmallFloor` e do `FungiTallCorner` e, ao virar na face do 1º degrau, o desenho dele avança ~6 px sobre o degrau (o corpo de 18 px encosta na parede). Opções, se desejado: mover o `FungiTallCorner` ou levar o Fragmento para x ≤ 289.
+- **Galerias Esquecidas (Reino das Profundezas), etapa 1: infraestrutura de salas — commitada (`9469fef`), feita em outra sessão; ainda não documentada em detalhe aqui.**
+  - `main/game.tscn` + `game.gd` (`Game`): cena persistente que carrega a sala atual em `RoomSlot`, põe a Terra (instância única, nunca recriada nem trocada de pai) numa entrada e aplica os limites da câmera; tem um `Fade` (`CanvasLayer`). Por enquanto carrega só a sala inicial (`start_room`, entrada `start`); transições entre salas ainda não existem. **Não é a cena principal** (continua o MovementLab).
+  - `world/levels/_shared/room.gd` (`Room`): base das salas (sem a Terra). Estrutura esperada: `Background`, `Terrain`, `Props`, `Enemies`, `Entrances` (`Marker2D` por entrada; o nome é o identificador, marca os pés da Terra), `Exits`; `camera_bounds` (múltiplos de 16, mínimo 640x368).
+  - `world/levels/depths/forgotten_galleries/room_01_awakening.tscn`: Sala 01 — Despertar (fundo com parallax, terreno, 6 cristais, entrada `start`; sem inimigos).
+  - `tests/levels/forgotten_galleries/room_infra_test.gd` (82 verificações: estrutura, carregamento, Terra única na entrada, câmera, fundo, terreno, percurso real com a física da Terra). Executar: `godot --headless --path . -s res://tests/levels/forgotten_galleries/room_infra_test.gd`.
 
 **Pendente / próximos passos possíveis:**
 - Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
@@ -106,7 +112,8 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Opcional, após teste no jogo: mostrar a volta à guarda na recuperação do golpe e o "depois do impacto" após a liberação do Punho Sísmico (hoje ambos voltam direto ao idle; exige mudar a regra do `attack`/`ability`).
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
-- Reino das Profundezas: props, grupos 3–4 (rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
+- Galerias Esquecidas: próximas etapas da outra sessão (transições entre salas, novas salas); documentar aqui as decisões dessa frente (cena `Game`, base `Room`) quando forem retomadas.
+- Reino das Profundezas: props, grupos 3–4 (rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"; mesmo processo dos cristais e da vegetação: guia + folha da IA em `props_build`, `convert_props.gd`, aprovação visual, `build_props.gd`, teste e capturas reais), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
