@@ -32,6 +32,13 @@ const MAX_SPEED: float = 110.0
 const WAVE_RANGE: float = 96.0
 const WAVE_HALF_WIDTH: float = 16.0
 const COOLDOWN_TICKS: int = 95
+## Fragmento "LivingFragmentPlatform": movido no editor em 2026-11-14 da plataforma larga para o
+## chão, ao pé do 1º degrau (posição aprovada). A cobertura de inimigo sobre plataforma one-way é
+## mantida por um Fragmento extra criado só no teste, na plataforma larga.
+const MOVED_FRAGMENT_POS: Vector2 = Vector2(302, 316)
+const PLATFORM_PROBE_POS: Vector2 = Vector2(600, 224)
+const FRAGMENT_PATROL_RANGE: float = 48.0
+const FRAGMENT_HALF_WIDTH: float = 9.0
 
 var _failures: int = 0
 var _checks: int = 0
@@ -40,7 +47,8 @@ var _terrain: TileMapLayer
 var _terra: PlayerCharacter
 var _fist: SeismicFist
 var _fragment_floor: LivingFragment
-var _fragment_platform: LivingFragment
+var _fragment_platform: LivingFragment  # o Fragmento movido para o chão (nome do nó mantido)
+var _fragment_probe: LivingFragment  # Fragmento extra na plataforma one-way, só no teste
 
 
 func _initialize() -> void:
@@ -61,6 +69,9 @@ func _run() -> void:
 		_finish()
 		return
 	_fist = _terra.get_node("SeismicFist") as SeismicFist
+	_fragment_probe = (load(FRAGMENT_PATH) as PackedScene).instantiate() as LivingFragment
+	_fragment_probe.position = PLATFORM_PROBE_POS
+	_room.get_node("Enemies").add_child(_fragment_probe)
 	_test_terrain_cells()
 
 	await _test_settle()
@@ -68,6 +79,7 @@ func _run() -> void:
 	await _test_fragment_detection()
 	_fragment_floor.queue_free()
 	_fragment_platform.queue_free()
+	_fragment_probe.queue_free()
 	await _wait(2)
 
 	await _test_floor_and_walls()
@@ -96,6 +108,9 @@ func _test_structure() -> void:
 	_check(_terra != null and _terra.scene_file_path.ends_with("terra.tscn"), "Terra instanciada")
 	_check(_fragment_floor != null and _fragment_platform != null
 		and _fragment_floor.scene_file_path.ends_with("living_fragment.tscn"), "2 Fragmentos Vivos em Enemies")
+	_check(_fragment_platform != null and _fragment_platform.scene_file_path.ends_with("living_fragment.tscn")
+		and _fragment_platform.position == MOVED_FRAGMENT_POS,
+		"LivingFragmentPlatform na posição aprovada %s (chão, ao pé do 1º degrau)" % MOVED_FRAGMENT_POS)
 	if _terra == null:
 		return
 	_check(_terra.position == Vector2(56, FLOOR_Y), "Terra começa sobre o chão (x 56)")
@@ -148,32 +163,46 @@ func _test_settle() -> void:
 	_check(_terra.is_on_floor() and absf(_terra.global_position.y - FLOOR_Y) < 0.5, "Terra no chão (y %.1f)" % _terra.global_position.y)
 	_check(_fragment_floor.is_on_floor() and absf(_fragment_floor.global_position.y - FLOOR_Y) < 0.5,
 		"Fragmento do chão apoiado (y %.1f)" % _fragment_floor.global_position.y)
-	_check(_fragment_platform.is_on_floor() and absf(_fragment_platform.global_position.y - WIDE_PLATFORM.position.y) < 0.5,
-		"Fragmento da plataforma one-way apoiado (y %.1f)" % _fragment_platform.global_position.y)
+	_check(_fragment_platform.is_on_floor() and absf(_fragment_platform.global_position.y - FLOOR_Y) < 0.5,
+		"Fragmento movido apoiado no chão (cai de y %.0f e assenta em y %.1f)" % [MOVED_FRAGMENT_POS.y, _fragment_platform.global_position.y])
+	_check(_fragment_probe.is_on_floor() and absf(_fragment_probe.global_position.y - WIDE_PLATFORM.position.y) < 0.5,
+		"Fragmento extra apoiado na plataforma one-way (y %.1f)" % _fragment_probe.global_position.y)
 
 
 func _test_fragment_patrol() -> void:
 	print("-- Patrulha sobre tiles (600 ticks, Terra longe)")
 	var floor_min: float = INF
 	var floor_max: float = -INF
+	var moved_min: float = INF
+	var moved_max: float = -INF
 	var plat_min: float = INF
 	var plat_max: float = -INF
 	var floor_y_ok: bool = true
+	var moved_y_ok: bool = true
 	var plat_y_ok: bool = true
 	for i: int in 600:
 		await physics_frame
 		var fx: float = _fragment_floor.global_position.x
-		var px: float = _fragment_platform.global_position.x
+		var mx: float = _fragment_platform.global_position.x
+		var px: float = _fragment_probe.global_position.x
 		floor_min = minf(floor_min, fx)
 		floor_max = maxf(floor_max, fx)
+		moved_min = minf(moved_min, mx)
+		moved_max = maxf(moved_max, mx)
 		plat_min = minf(plat_min, px)
 		plat_max = maxf(plat_max, px)
 		floor_y_ok = floor_y_ok and absf(_fragment_floor.global_position.y - FLOOR_Y) < 0.5
-		plat_y_ok = plat_y_ok and absf(_fragment_platform.global_position.y - WIDE_PLATFORM.position.y) < 0.5
+		moved_y_ok = moved_y_ok and absf(_fragment_platform.global_position.y - FLOOR_Y) < 0.5
+		plat_y_ok = plat_y_ok and absf(_fragment_probe.global_position.y - WIDE_PLATFORM.position.y) < 0.5
 	_check(floor_y_ok and floor_max - floor_min > 30.0, "chão: patrulha %.0f..%.0f sem sair do chão" % [floor_min, floor_max])
-	_check(plat_y_ok and plat_max - plat_min > 10.0, "plataforma: patrulha %.0f..%.0f sem cair" % [plat_min, plat_max])
+	# Fragmento movido: patrulha no chão, sem entrar na face do 1º degrau (parede) e dentro do
+	# território (±48 px da posição inicial).
+	_check(moved_y_ok and moved_max - moved_min > 30.0, "chão (Fragmento movido): patrulha %.0f..%.0f sem sair do chão" % [moved_min, moved_max])
+	_check(moved_max <= STEP1_X - FRAGMENT_HALF_WIDTH + 0.5 and moved_min >= MOVED_FRAGMENT_POS.x - FRAGMENT_PATROL_RANGE - 0.5,
+		"chão (Fragmento movido): não entra no 1º degrau (x ≤ %.0f) e fica no território (x ≥ %.0f)" % [STEP1_X - FRAGMENT_HALF_WIDTH, MOVED_FRAGMENT_POS.x - FRAGMENT_PATROL_RANGE])
+	_check(plat_y_ok and plat_max - plat_min > 10.0, "plataforma (Fragmento extra): patrulha %.0f..%.0f sem cair" % [plat_min, plat_max])
 	_check(plat_min >= WIDE_PLATFORM.position.x and plat_max <= WIDE_PLATFORM.end.x,
-		"plataforma: centro sempre sobre a plataforma (%.0f..%.0f)" % [WIDE_PLATFORM.position.x, WIDE_PLATFORM.end.x])
+		"plataforma (Fragmento extra): centro sempre sobre a plataforma (%.0f..%.0f)" % [WIDE_PLATFORM.position.x, WIDE_PLATFORM.end.x])
 
 
 func _test_fragment_detection() -> void:

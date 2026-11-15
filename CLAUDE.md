@@ -94,6 +94,10 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - `world/props/depths/`: `depths_props_palette.png` (24 cores) e `crystals/` (4 PNGs + 4 cenas `Sprite2D`). Nó `Props` na sala de teste com 8 cristais.
   - `tests/props/depths_crystals_test.gd` (91 verificações: paleta, imagens, âncoras, importação, cenas sem script/colisão, uso na sala, apoio real no terreno, regras de posicionamento, preservação). Executar: `godot --headless --path . -s res://tests/props/depths_crystals_test.gd`.
   - Ordem de desenho confirmada com capturas reais (onda sísmica `top_level`, Terra e Fragmento Vivo por cima dos cristais). Fontes, conversão, prévias, instalação e capturas fora do projeto, em `Desktop\sprites\fase_terra\props_build\` (README).
+- **Reino das Profundezas: props decorativos, grupo 2 (vegetação) — validado manualmente e commitado.** Ver seção 9, "Cenário".
+  - `world/props/depths/vegetation/`: 6 PNGs + 6 cenas `Sprite2D`. 8 instâncias no `Props` da sala, depois dos cristais.
+  - `tests/props/depths_vegetation_test.gd` (114 verificações: cores por sprite, imagens, âncoras, importação, cenas sem script/colisão, apoio no desenho real do terreno, superfícies jogáveis livres, altura livre sob peças penduradas, regras do caminho principal, preservação). Executar: `godot --headless --path . -s res://tests/props/depths_vegetation_test.gd`. O teste dos cristais passou a aceitar outras famílias no `Props` (só cenas de `world/props/depths/`).
+  - Sala: o `LivingFragmentPlatform` foi movido no editor (2026-11-14, aprovado) da plataforma larga para o chão em (302, 316), ao pé do 1º degrau; testes da sala, do parallax e dos props atualizados. A cobertura de inimigo sobre plataforma one-way no teste da sala vem de um Fragmento extra criado só no teste.
 
 **Pendente / próximos passos possíveis:**
 - Opcional: refazer `jump`/`fall` na escala exata do `idle` (hoje ~10–15% maiores).
@@ -102,7 +106,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Opcional, após teste no jogo: mostrar a volta à guarda na recuperação do golpe e o "depois do impacto" após a liberação do Punho Sísmico (hoje ambos voltam direto ao idle; exige mudar a regra do `attack`/`ability`).
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
-- Reino das Profundezas: props, grupos 2–4 (vegetação, rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
+- Reino das Profundezas: props, grupos 3–4 (rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
 
@@ -399,8 +403,18 @@ Linhas = quem procura (mask); colunas = layer do alvo.
     | `crystal_large` (`CrystalLarge`) | 48x56 | 48x53 | (−24, −56) |
     | `crystal_ceiling` (`CrystalCeiling`, pendente) | 40x48 | 34x44 | (−20, 0) |
   - A folha da IA tinha pixels de arte não quadrados (~7,44 x 6,60 px); a conversão leva 1 pixel de arte a 1 pixel quadrado, sem redimensionar por fração, então os cristais ficaram ~12% mais altos que na folha (aprovado). Contornos em `#130f12` e `#221817` e pixels isolados da arte foram preservados.
-  - Catálogo aprovado para os próximos grupos (implementados um de cada vez): vegetação (`moss_tuft`, `moss_hanging`, `root_short`, `root_long`, `fungi_small`, `fungi_tall`), rochas (`pebbles`, `boulder`, `stalagmite_small/large`, `stalactite`, `crack_small/large`), ruínas (`pillar_broken_short/tall`, `pillar_fallen`, `carved_stone`, `carved_fragment`).
-- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Background` (fundo com parallax), `Terrain`, `Props` (8 cristais: grande sobre o bloco flutuante, médios sobre a faixa e no canto direito, pequenos no chão, no primeiro degrau e ao pé do terceiro, dois pendentes no teto), `Enemies` (2 Fragmentos Vivos: chão e plataforma one-way) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
+  - **Vegetação** (`vegetation/`; cores por sprite, todas da paleta de 24): musgos `#221817 #301d18 #1a1e0c #3f4612 #646a12 #878b13` (sem `#aead19`, para ficarem mais escuros que o musgo dos tiles); raízes `#130f12 #221817 #301d18 #43261d #5a3321 #794526 #98592c`; fungos `#221817 #43261d #5a3321 #98592c #c08550 #e3a86d #3f4612 #646a12`.
+    | Cena (raiz) | Caixa | Arte | Âncora | `offset` |
+    |---|---|---|---|---|
+    | `moss_hanging` (`MossHanging`) | 48x32 | 45x25 | teto | (−24, 0) |
+    | `root_short` (`RootShort`) | 32x48 | 25x42 | teto | (−16, 0) |
+    | `root_long` (`RootLong`) | 48x64 | 45x63 | teto | (−24, 0) |
+    | `moss_tuft` (`MossTuft`) | 32x16 | 26x9 | chão | (−16, −16) |
+    | `fungi_small` (`FungiSmall`) | 24x24 | 22x19 | chão | (−12, −24) |
+    | `fungi_tall` (`FungiTall`) | 24x32 | 21x31 | chão | (−12, −32) |
+  - Regras da vegetação na sala: apoio no **pixel opaco do atlas** (não só na célula; a face de baixo das plataformas one-way é irregular: corpo até a linha 8–10 do tile, gotas até a 15); sobreposição decorativa com o terreno permitida, mas sem cobrir o topo do chão (4 px) nem a faixa one-way (8 px); peças penduradas deixam 54 px livres (Terra de pé + 8) sobre a superfície abaixo; no caminho principal só vegetação de até 20 px, salvo encostada numa parede (até 4 px); nada alto no início da Terra. A folha da IA veio ~40% maior que o pedido (grade quase quadrada, 7,34 x 7,27 px): caixas finais aumentadas, arte 1:1 sem corte (aprovado).
+  - Catálogo aprovado para os próximos grupos (implementados um de cada vez): rochas (`pebbles`, `boulder`, `stalagmite_small/large`, `stalactite`, `crack_small/large`), ruínas (`pillar_broken_short/tall`, `pillar_fallen`, `carved_stone`, `carved_fragment`).
+- **Sala de teste** `world/levels/depths/depths_test_room.tscn` (48x23 tiles, 768x368): `Background` (fundo com parallax), `Terrain`, `Props` (8 cristais: grande sobre o bloco flutuante, médios sobre a faixa e no canto direito, pequenos no chão, no primeiro degrau e ao pé do terceiro, dois pendentes no teto; 8 de vegetação: tufos no chão esquerdo e no 2º degrau, fungo pequeno sob a faixa, fungo alto junto à face do 1º degrau, musgo pendente sob o bloco e sob a plataforma larga, raiz curta no teto e raiz longa no teto à direita), `Enemies` (2 Fragmentos Vivos, ambos no chão: `LivingFragmentFloor` em (648, 320) e `LivingFragmentPlatform` em (302, 316), ao pé do 1º degrau — o nome do nó vem da posição antiga, na plataforma larga) e `Terra` com `Camera2D` (limites = sala). Instâncias só sobrescrevem a posição. Contém chão, paredes, degraus de 1–3 tiles, bloco flutuante, faixa, coluna, saliência no teto e plataformas (larga, 1x1, alta).
 
 ### A definir
 

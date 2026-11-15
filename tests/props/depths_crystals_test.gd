@@ -9,6 +9,7 @@ extends SceneTree
 ##   godot --headless --path . -s res://tests/props/depths_crystals_test.gd
 
 const DIR: String = "res://world/props/depths/crystals/"
+const PROPS_ROOT: String = "res://world/props/depths/"
 const PROPS_PALETTE: String = "res://world/props/depths/depths_props_palette.png"
 const TERRAIN_PALETTE: String = "res://world/tilesets/depths/depths_palette.png"
 const ROOM_PATH: String = "res://world/levels/depths/depths_test_room.tscn"
@@ -37,7 +38,8 @@ const SPAWN_ZONE: Vector2i = Vector2i(32, 96)  # x onde a Terra começa (até 1 
 const CAMERA_LIMITS: Rect2i = Rect2i(0, 0, 768, 368)
 const TERRA_POS: Vector2 = Vector2(56, 320)
 const FRAGMENT_FLOOR_POS: Vector2 = Vector2(648, 320)
-const FRAGMENT_PLATFORM_POS: Vector2 = Vector2(600, 224)
+## LivingFragmentPlatform: movido no editor em 2026-11-14 para o chão, ao pé do 1º degrau (aprovado).
+const FRAGMENT_PLATFORM_POS: Vector2 = Vector2(302, 316)
 
 var _failures: int = 0
 var _checks: int = 0
@@ -178,15 +180,21 @@ func _test_room() -> void:
 	var no_overlap := true
 	var rules := true
 	var details := PackedStringArray()
+	var crystal_count := 0
 	for child in props.get_children():
 		var inst := child as Sprite2D
 		var spec: Array = []
 		for s: Array in CRYSTALS:
 			if child.scene_file_path == DIR + s[0] + ".tscn":
 				spec = s
-		if inst == null or spec.is_empty():
+		# Props aceita outras famílias (ex.: vegetação), desde que sejam cenas de props da região;
+		# as verificações abaixo continuam valendo para todo cristal.
+		if inst == null or not child.scene_file_path.begins_with(PROPS_ROOT):
 			all_instances = false
 			continue
+		if spec.is_empty():
+			continue
+		crystal_count += 1
 		used_types[spec[0]] = true
 		var pos := inst.position
 		if pos != pos.round():
@@ -224,9 +232,9 @@ func _test_room() -> void:
 		if floor and height > 24 and pos.x + img.get_width() / 2.0 > SPAWN_ZONE.x and pos.x - img.get_width() / 2.0 < SPAWN_ZONE.y and int(pos.y) == 320:
 			rules = false
 			details.append("%s: cristal alto no início da Terra" % child.name)
-	_check(props.get_child_count() > 0 and all_instances, "sala: Props só contém instâncias das cenas de cristal (%d)" % props.get_child_count())
-	_check(used_types.size() == CRYSTALS.size(), "sala: os quatro tipos de cristal aparecem (%s)" % ", ".join(used_types.keys()))
-	_check(props.get_child_count() <= 12, "sala: quantidade contida (%d cristais, máx. 12)" % props.get_child_count())
+	_check(props.get_child_count() > 0 and all_instances, "sala: todo filho de Props é instância de uma cena de props da região (%s) (%d filhos)" % [PROPS_ROOT, props.get_child_count()])
+	_check(crystal_count > 0 and used_types.size() == CRYSTALS.size(), "sala: os quatro tipos de cristal aparecem (%s)" % ", ".join(used_types.keys()))
+	_check(crystal_count <= 12, "sala: quantidade contida (%d cristais, máx. 12)" % crystal_count)
 	_check(all_integer, "sala: posições em pixels inteiros")
 	_check(all_plain, "sala: instâncias só sobrescrevem a posição (regra da sala: sem flip, escala, rotação, z_index, offset ou filhos)")
 	_check(supported, "sala: cristais de chão apoiados no terreno e pendentes presos ao teto em toda a linha de contato %s" % " ".join(details))

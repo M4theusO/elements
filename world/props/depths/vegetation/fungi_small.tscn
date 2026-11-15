@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://world/props/depths/vegetation/fungi_small.png" id="1_3yb3o"]
+
+[node name="FungiSmall" type="Sprite2D" unique_id=343993019]
+texture = ExtResource("1_3yb3o")
+centered = false
+offset = Vector2(-12, -24)

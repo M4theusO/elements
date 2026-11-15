@@ -32,7 +32,8 @@ const PALETTE: Array[String] = [
 const CAMERA_LIMITS: Rect2i = Rect2i(0, 0, 768, 368)
 const TERRA_POS: Vector2 = Vector2(56, 320)
 const FRAGMENT_FLOOR_POS: Vector2 = Vector2(648, 320)
-const FRAGMENT_PLATFORM_POS: Vector2 = Vector2(600, 224)
+## LivingFragmentPlatform: movido no editor em 2026-11-14 para o chão, ao pé do 1º degrau (aprovado).
+const FRAGMENT_PLATFORM_POS: Vector2 = Vector2(302, 316)
 
 var _failures: int = 0
 var _checks: int = 0

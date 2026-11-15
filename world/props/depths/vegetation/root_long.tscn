@@ -1,0 +1,8 @@
+[gd_scene format=3]
+
+[ext_resource type="Texture2D" path="res://world/props/depths/vegetation/root_long.png" id="1_2ljyv"]
+
+[node name="RootLong" type="Sprite2D" unique_id=1552255287]
+texture = ExtResource("1_2ljyv")
+centered = false
+offset = Vector2(-24, 0)
