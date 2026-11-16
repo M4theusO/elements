@@ -97,6 +97,31 @@ func get_facing() -> float:
 	return _visuals.scale.x
 
 
+## Vira o personagem para a direita (> 0) ou para a esquerda (< 0); 0 mantém o lado atual.
+func set_facing(direction: float) -> void:
+	if direction != 0.0:
+		_visuals.scale.x = signf(direction)
+
+
+## Interrompe tudo o que está em andamento, sem mexer em vida nem recargas (ex.: troca de
+## sala): golpe básico, preparação da habilidade, efeitos já lançados (hitboxes top_level
+## filhas, como a onda sísmica), pulo, coyote time, jump buffer e velocidade.
+func interrupt_actions() -> void:
+	_melee_attack.cancel()
+	if ability != null:
+		ability.cancel()
+	for child: Node in get_children():
+		if child is Hitbox and (child as Hitbox).top_level:
+			(child as Hitbox).deactivate()
+			child.queue_free()
+	velocity = Vector2.ZERO
+	_coyote_timer = 0.0
+	_jump_buffer_timer = 0.0
+	_is_jump_rising = false
+	if not _is_dead:
+		_play_animation(ANIM_IDLE)
+
+
 func get_health() -> HealthComponent:
 	return _health
 

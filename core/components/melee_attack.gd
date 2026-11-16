@@ -69,6 +69,18 @@ func finish_active() -> bool:
 	return true
 
 
+## Interrompe o golpe em qualquer fase, sem dano nem recuperação (ex.: troca de sala):
+## desliga a Hitbox e volta a pronto. Retorna se havia um golpe em andamento.
+func cancel() -> bool:
+	if _phase == Phase.READY:
+		return false
+	_phase = Phase.READY
+	_phase_time_left = 0.0
+	hitbox.deactivate()
+	attack_finished.emit()
+	return true
+
+
 func _advance_phase() -> void:
 	match _phase:
 		Phase.WINDUP:

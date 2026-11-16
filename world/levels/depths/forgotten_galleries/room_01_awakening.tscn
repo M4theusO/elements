@@ -6,6 +6,10 @@
 [ext_resource type="PackedScene" path="res://world/props/depths/crystals/crystal_small.tscn" id="4_witwr"]
 [ext_resource type="PackedScene" path="res://world/props/depths/crystals/crystal_medium.tscn" id="5_j3xac"]
 [ext_resource type="PackedScene" path="res://world/props/depths/crystals/crystal_ceiling.tscn" id="6_raog3"]
+[ext_resource type="Script" path="res://world/levels/_shared/room_exit.gd" id="7_exit"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_east"]
+size = Vector2(32, 64)
 
 [node name="Room01Awakening" type="Node2D" unique_id=589906590]
 script = ExtResource("1_3ov81")
@@ -44,4 +48,19 @@ position = Vector2(768, 80)
 [node name="start" type="Marker2D" parent="Entrances" unique_id=1236942031]
 position = Vector2(72, 320)
 
+[node name="east" type="Marker2D" parent="Entrances"]
+position = Vector2(904, 320)
+
 [node name="Exits" type="Node2D" parent="." unique_id=1361130304]
+
+[node name="East" type="Area2D" parent="Exits"]
+position = Vector2(944, 288)
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+script = ExtResource("7_exit")
+target_room = "res://world/levels/depths/forgotten_galleries/room_02_gallery.tscn"
+target_entry = &"west"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Exits/East"]
+shape = SubResource("RectangleShape2D_east")

@@ -154,16 +154,21 @@ func _test_room_structure() -> void:
 	_check(_terrain != null and _terrain.tile_set != null and _terrain.tile_set.resource_path == TILESET_PATH
 		and _terrain.collision_enabled, "Terrain: TileMapLayer com depths_tileset.tres e colisão ligada")
 	var entrances: Node = _room.get_node_or_null("Entrances")
-	_check(entrances != null and entrances.get_child_count() == 1 and entrances.get_child(0) is Marker2D
-		and entrances.get_child(0).name == &"start", "Entrances: só o Marker2D start")
-	_check(_room.has_entrance(&"start") and not _room.has_entrance(&"east") and not _room.has_entrance(&""),
-		"has_entrance: start existe; east e vazio não")
+	var entrance_names: Array[String] = []
+	for child: Node in entrances.get_children():
+		if child is Marker2D:
+			entrance_names.append(String(child.name))
+	_check(entrances.get_child_count() == 2 and entrance_names == ["start", "east"], "Entrances: Marker2D start e east (%s)" % [entrance_names])
+	_check(_room.has_entrance(&"start") and _room.has_entrance(&"east") and not _room.has_entrance(&"west")
+		and not _room.has_entrance(&""), "has_entrance: start e east existem; west e vazio não")
 	_check(_room.get_entrance(&"start") != null and _room.get_entrance(&"start").position == START,
 		"get_entrance(start) nos pés em %s" % START)
 	_check(_room.get_node("Enemies").get_child_count() == 0 and _count_type(_game, "Enemy") == 0, "sem inimigos")
-	_check(_room.get_node("Exits").get_child_count() == 0, "Exits vazio (sem saídas nesta etapa)")
-	_check(_count_type(_room, "Area2D") == 0 and _count_type(_room, "Camera2D") == 0
-		and _count_type(_room, "StaticBody2D") == 0, "sala sem Area2D (gatilhos), câmera ou corpos fora do tilemap")
+	# A saída leste (etapa 2) é a única Area2D; os detalhes ficam em room_transition_test.gd.
+	_check(_room.get_exits().size() == 1 and _room.get_node("Exits").get_child_count() == 1
+		and _room.get_exits()[0].name == &"East", "Exits: só a saída East (RoomExit)")
+	_check(_count_type(_room, "Area2D") == 1 and _count_type(_room, "Camera2D") == 0
+		and _count_type(_room, "StaticBody2D") == 0, "sala sem outras Area2D, câmera ou corpos fora do tilemap")
 
 
 func _test_terrain_cells() -> void:
@@ -288,15 +293,19 @@ func _test_spawn() -> void:
 	_check(_terra.get_health().current_health == _terra.get_health().max_health, "vida cheia")
 
 
+## Este teste confere a geometria da Sala 01 sozinha: a saída leste é desligada aqui para
+## a Terra poder chegar ao fim da passagem (as transições são testadas em room_transition_test.gd).
 func _test_no_transitions() -> void:
-	print("-- Sem transições")
+	print("-- Saída desligada para o teste da geometria")
+	for room_exit: RoomExit in _room.get_exits():
+		room_exit.monitoring = false
 	var slot: Node = _game.get_node("RoomSlot")
 	await _reset(Vector2(900, FLOOR_Y), 1.0)
 	Input.action_press("move_right")
 	await _wait(60)
 	Input.action_release("move_right")
-	_check(slot.get_child_count() == 1 and slot.get_child(0) == _room and _game.call("get_room") == _room,
-		"na passagem direita a sala continua a mesma")
+	_check(slot.get_child_count() == 1 and slot.get_child(0) == _room and _game.call("get_room") == _room
+		and not _game.call("is_transitioning"), "com a saída desligada, a passagem direita não troca a sala")
 	_check(not (_game.get_node("Fade/ColorRect") as ColorRect).visible, "Fade continua invisível")
 
 
