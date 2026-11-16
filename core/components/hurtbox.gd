@@ -43,6 +43,12 @@ func receive_hit(damage: int, hit_direction: Vector2 = Vector2.ZERO) -> void:
 	_invulnerable_left = invulnerability_time
 
 
+## Começa (ou prolonga) a invulnerabilidade por seconds, sem receber golpe (ex.: ao renascer).
+## Não encurta uma invulnerabilidade mais longa já em andamento.
+func start_invulnerability(seconds: float) -> void:
+	_invulnerable_left = maxf(_invulnerable_left, seconds)
+
+
 func is_invulnerable() -> bool:
 	return _invulnerable_left > TIME_EPSILON
 

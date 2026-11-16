@@ -2,9 +2,14 @@ class_name PlayerCharacter
 extends CharacterBody2D
 ## Base compartilhada pelos protagonistas: movimento horizontal, gravidade, pulo, ataque básico
 ## e vida (HealthComponent + Hurtbox com invulnerabilidade após dano). Em 0 de vida, perde o
-## controle e toca a animação death.
+## controle, toca a animação death e emite death_finished quando ela termina; revive() devolve
+## a personagem ao jogo (quem decide quando é o controlador de morte/reinício da cena).
+## Todo protagonista entra no grupo PLAYER_GROUP (a HUD encontra a personagem por ele).
 ## Todos os parâmetros vêm de um CharacterStats; cada personagem fornece o seu.
 ## O golpe (dados e alcance) é configurado na cena de cada personagem, em MeleeAttack e Visuals/Hitbox.
+
+## Emitido uma única vez por morte, quando a animação death termina.
+signal death_finished
 
 ## Nomes de animação padronizados para todos os protagonistas (definidos no SpriteFrames de cada um).
 const ANIM_IDLE: StringName = &"idle"
@@ -21,10 +26,17 @@ const DAMAGE_FLASH_COLOR: Color = Color(2.0, 2.0, 2.0)
 const DAMAGE_FLASH_DURATION: float = 0.1
 const INVULNERABLE_BLINK_INTERVAL: float = 0.075
 const INVULNERABLE_ALPHA: float = 0.35
+## Grupo de todos os protagonistas controláveis.
+const PLAYER_GROUP: StringName = &"player"
+## Tempo até death_finished quando não há como esperar o fim da animação death (ausente no
+## SpriteFrames ou em loop): duração da animação original da Terra (6 quadros a 8 fps).
+const DEATH_FINISH_FALLBACK_TIME: float = 0.75
 
 @export var stats: CharacterStats
 ## Habilidade especial do personagem (ação "ability"). Vazia na cena base.
 @export var ability: CharacterAbility
+## Invulnerabilidade logo após revive() (usa a Hurtbox; a personagem pisca como após um dano).
+@export_range(0.0, 5.0, 0.05, "suffix:s") var revive_invulnerability_time: float = 1.0
 
 var _coyote_timer: float = 0.0
 var _jump_buffer_timer: float = 0.0
@@ -32,6 +44,9 @@ var _jump_buffer_timer: float = 0.0
 var _is_jump_rising: bool = false
 var _damage_flash_tween: Tween
 var _is_dead: bool = false
+var _death_finished_emitted: bool = false
+## Conta as mortes; o fallback de death_finished só vale para a morte em que foi armado.
+var _death_count: int = 0
 
 @onready var _visuals: Node2D = $Visuals
 @onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
@@ -44,8 +59,10 @@ func _ready() -> void:
 	if stats == null:
 		push_warning("%s: nenhum CharacterStats atribuído; usando valores padrão." % name)
 		stats = CharacterStats.new()
+	add_to_group(PLAYER_GROUP)
 	_health.damaged.connect(_on_damaged)
 	_health.died.connect(_on_died)
+	_sprite.animation_finished.connect(_on_sprite_animation_finished)
 
 
 func _process(_delta: float) -> void:
@@ -126,6 +143,26 @@ func get_health() -> HealthComponent:
 	return _health
 
 
+func is_dead() -> bool:
+	return _is_dead
+
+
+## Devolve a personagem ao jogo com vida cheia: desfaz o estado de morte, religa o golpe,
+## interrompe o que estava em andamento (ver interrupt_actions) e começa a invulnerabilidade de
+## revive_invulnerability_time. A posição fica a cargo de quem chama (entrada da sala, etc.).
+## Também serve para uma personagem viva (só restaura vida e dá a invulnerabilidade).
+func revive() -> void:
+	_is_dead = false
+	_death_finished_emitted = false
+	_melee_attack.process_mode = Node.PROCESS_MODE_INHERIT
+	_health.restore_full()
+	if _damage_flash_tween != null:
+		_damage_flash_tween.kill()
+	_visuals.modulate = Color.WHITE
+	interrupt_actions()
+	_hurtbox.start_invulnerability(revive_invulnerability_time)
+
+
 func get_hurtbox() -> Hurtbox:
 	return _hurtbox
 
@@ -138,9 +175,11 @@ func _on_damaged(_amount: int) -> void:
 	_damage_flash_tween.tween_property(_visuals, "modulate", Color.WHITE, DAMAGE_FLASH_DURATION)
 
 
-## Sem respawn por enquanto: a personagem fica caída no último quadro de death.
+## A personagem fica caída no último quadro de death até alguém chamar revive().
 func _on_died() -> void:
 	_is_dead = true
+	_death_finished_emitted = false
+	_death_count += 1
 	_is_jump_rising = false
 	# Um golpe ou habilidade em preparação não pode causar dano depois da morte.
 	_melee_attack.process_mode = Node.PROCESS_MODE_DISABLED
@@ -148,6 +187,26 @@ func _on_died() -> void:
 	if ability != null:
 		ability.cancel()
 	_play_animation(ANIM_DEATH)
+	# O fim da morte vem de animation_finished; só sem death (ou com death em loop) usa o tempo.
+	var frames: SpriteFrames = _sprite.sprite_frames
+	if frames == null or not frames.has_animation(ANIM_DEATH) or frames.get_animation_loop(ANIM_DEATH):
+		var death_id: int = _death_count
+		get_tree().create_timer(DEATH_FINISH_FALLBACK_TIME, false, true).timeout.connect(
+			func() -> void:
+				if _death_count == death_id:
+					_emit_death_finished())
+
+
+func _on_sprite_animation_finished() -> void:
+	if _is_dead and _sprite.animation == ANIM_DEATH:
+		_emit_death_finished()
+
+
+func _emit_death_finished() -> void:
+	if not _is_dead or _death_finished_emitted:
+		return
+	_death_finished_emitted = true
+	death_finished.emit()
 
 
 func _is_ability_casting() -> bool:

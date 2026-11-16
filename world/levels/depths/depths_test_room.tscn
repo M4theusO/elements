@@ -14,6 +14,9 @@
 [ext_resource type="PackedScene" path="res://world/props/depths/vegetation/moss_tuft.tscn" id="12_mt"]
 [ext_resource type="PackedScene" path="res://world/props/depths/vegetation/fungi_small.tscn" id="13_fs"]
 [ext_resource type="PackedScene" path="res://world/props/depths/vegetation/fungi_tall.tscn" id="14_ft"]
+[ext_resource type="PackedScene" path="res://ui/hud/player_hud.tscn" id="15_hud"]
+[ext_resource type="PackedScene" path="res://ui/menus/game_over_screen.tscn" id="16_go"]
+[ext_resource type="Script" path="res://main/scene_death_controller.gd" id="17_dc"]
 
 [node name="DepthsTestRoom" type="Node2D" unique_id=426425015]
 
@@ -89,3 +92,12 @@ limit_left = 0
 limit_top = 0
 limit_right = 768
 limit_bottom = 368
+
+[node name="PlayerHud" parent="." unique_id=1310224466 instance=ExtResource("15_hud")]
+
+[node name="GameOverScreen" parent="." unique_id=742811930 instance=ExtResource("16_go")]
+
+[node name="DeathController" type="Node" parent="." unique_id=2018837465 node_paths=PackedStringArray("player", "game_over_screen")]
+script = ExtResource("17_dc")
+player = NodePath("../Terra")
+game_over_screen = NodePath("../GameOverScreen")
