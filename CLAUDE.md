@@ -101,8 +101,9 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
   - Observação visual (sem ação decidida): na patrulha (x 254–343), esse Fragmento passa na frente do `CrystalSmallFloor` e do `FungiTallCorner` e, ao virar na face do 1º degrau, o desenho dele avança ~6 px sobre o degrau (o corpo de 18 px encosta na parede). Opções, se desejado: mover o `FungiTallCorner` ou levar o Fragmento para x ≤ 289.
 - **Galerias Esquecidas (Reino das Profundezas): primeira área jogável, em etapas (planejamento de 5 salas aprovado). Ver seção 9, "Salas e transições".**
   - Etapa 1 — infraestrutura e Sala 01 — Despertar (`9469fef`): cena `Game` (`main/game.tscn`), base `Room`, `room_01_awakening.tscn`. **A `Game` não é a cena principal** (continua o MovementLab); testar com F6 em `main/game.tscn`.
-  - Etapa 2 — Sala 02 — Galeria e transições (validada manualmente): `RoomExit`, transição com fade na `Game`, `room_02_gallery.tscn` (1 Fragmento Vivo), métodos novos `MeleeAttack.cancel()`, `PlayerCharacter.interrupt_actions()` e `set_facing()` (aprovados).
-  - Testes: `tests/levels/forgotten_galleries/room_infra_test.gd` (82: estrutura, carregamento, Terra única, câmera, fundo, terreno, percurso real da Sala 01), `room_02_gallery_test.gd` (50: estrutura, terreno, props, Fragmento na arena, percurso nos dois sentidos) e `room_transition_test.gd` (69: ida e volta, vida e instância preservadas, chegada, câmera, fade, sem loop, falhas seguras, golpe/Punho Sísmico/pulo na porta, inimigos sem acesso, Terra morta). Executar: `godot --headless --path . -s res://tests/levels/forgotten_galleries/<arquivo>`.
+  - Etapa 2 — Sala 02 — Galeria e transições (`bd75b25`): `RoomExit`, transição com fade na `Game`, `room_02_gallery.tscn` (1 Fragmento Vivo), métodos novos `MeleeAttack.cancel()`, `PlayerCharacter.interrupt_actions()` e `set_facing()` (aprovados).
+  - Etapa 3 — persistência temporária dos inimigos derrotados (validada manualmente): metadata `persistent_id` nas instâncias, registro em memória na `Game`; teste `enemy_persistence_test.gd` (37).
+  - Testes: `tests/levels/forgotten_galleries/room_infra_test.gd` (82: estrutura, carregamento, Terra única, câmera, fundo, terreno, percurso real da Sala 01), `room_02_gallery_test.gd` (51: estrutura, terreno, props, Fragmento na arena, percurso nos dois sentidos) e `room_transition_test.gd` (69: ida e volta, vida e instância preservadas, chegada, câmera, fade, sem loop, falhas seguras, golpe/Punho Sísmico/pulo na porta, inimigos sem acesso, Terra morta). Executar: `godot --headless --path . -s res://tests/levels/forgotten_galleries/<arquivo>`.
   - Geradores das salas (determinísticos na geometria; o pincel sorteia as variações) fora do projeto, em `Desktop\sprites\fase_terra\galleries_build\` (README). Depois de aprovada, uma sala é editada à mão (a Sala 01 recebeu a entrada `east` e a saída `East` assim).
 
 **Pendente / próximos passos possíveis:**
@@ -112,7 +113,7 @@ Toda decisão técnica deve funcionar na exportação Web. Regras:
 - Opcional, após teste no jogo: mostrar a volta à guarda na recuperação do golpe e o "depois do impacto" após a liberação do Punho Sísmico (hoje ambos voltam direto ao idle; exige mudar a regra do `attack`/`ability`).
 - Respawn da Terra (hoje fica caída após a morte; é preciso reiniciar a cena) e HUD de vida.
 - Marco 1, próximas etapas: cenário destrutível (incluir `destructibles` na mask da onda sísmica), progressão.
-- Galerias Esquecidas: etapa 3 (persistência temporária dos inimigos derrotados), salas 03 (Ascensão), 04 (Cristais, Escavador) e 05 (Portão Antigo); trocar a cena principal para `main/game.tscn` ao fim da área.
+- Galerias Esquecidas: salas 03 (Ascensão), 04 (Cristais, Escavador) e 05 (Portão Antigo); trocar a cena principal para `main/game.tscn` ao fim da área.
 - Reino das Profundezas: props, grupos 3–4 (rochas, ruínas; catálogo e paleta aprovados, ver seção 9, "Cenário"; mesmo processo dos cristais e da vegetação: guia + folha da IA em `props_build`, `convert_props.gd`, aprovação visual, `build_props.gd`, teste e capturas reais), primeira fase definitiva; descer de plataformas one-way (`move_down`, ainda não implementado); rampas.
 
 **Não presuma que algo existe.** Antes de referenciar uma cena, script, asset, input action, layer de física ou autoload, verifique no repositório. Se não existir, informe e pergunte antes de criar.
@@ -439,7 +440,12 @@ Linhas = quem procura (mask); colunas = layer do alvo.
   |---|---|---|---|---|
   | `room_01_awakening` | 60x23 (960x368) | `start` (72, 320), `east` (904, 320) | `East` → Sala 02 `west` | degraus de 1 tile, vão de 2 tiles, patamar, plataforma one-way opcional (4 tiles, alcançada do patamar), bloco de 2 tiles; 6 cristais; sem inimigos |
   | `room_02_gallery` | 64x23 (1024x368) | `west` (56, 320), `east` (968, 320) | `West` → Sala 01 `east` (leste fechada até a Sala 03) | elevações de 1 tile (colunas 12–15 e 48–51), arena plana de 512 px (x 256–768) com 1 Fragmento Vivo em (512, 320), a 456 px das entradas; 7 cristais |
-- Inimigos de uma sala renascem quando ela é recarregada (a sala é liberada ao sair).
+- **Persistência temporária dos inimigos** (etapa 3, só em memória e só na sessão; sem save, sem autoload):
+  - Identificador: **metadata `persistent_id`** (`Room.PERSISTENT_ID_META`) na instância do inimigo, na cena da sala (`StringName`, não vazio, único na sala; pode repetir em salas diferentes; independe do nome do nó). Sem alterar `Enemy` nem as cenas dos inimigos. Sala 02: `gallery_fragment_01`.
+  - `Room.get_persistent_enemies() -> Dictionary[StringName, Enemy]`: filhos diretos de `Enemies` que são `Enemy`. ID ausente/vazio ou repetido → `push_error` e o inimigo fica de fora (todos os que repetem o ID): continua no jogo, mas renasce sempre com a sala e a morte não é registrada.
+  - `Game`: `_defeated_enemies = { caminho da sala: { persistent_id: true } }`; `is_enemy_defeated(room_path, id)`, `get_defeated_enemies(room_path)`. Ao trocar de sala (`load_room` e transição), **antes de a sala entrar na árvore**: inimigos já derrotados são liberados (nem rodam `_ready`); os vivos têm o `died` do `HealthComponent` ligado (one-shot, com o caminho da sala) ao registro — a morte entra na hora, sem esperar a animação nem o `queue_free`, e uma morte durante o fade de saída fica na sala certa. As ligações morrem com o inimigo (sem duplicar entre visitas). Uma `Game` nova começa vazia (reiniciar a cena restaura todos).
+  - Vivos (mesmo feridos) renascem inteiros no ponto de origem, porque a sala é liberada ao sair e recarregada da cena.
+  - Teste: `tests/levels/forgotten_galleries/enemy_persistence_test.gd` (37 verificações; grava salas temporárias em `user://` e as apaga no fim).
 
 ### A definir
 

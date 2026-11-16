@@ -145,6 +145,8 @@ func _test_structure() -> void:
 		and _count_type(_game, "Enemy") == 1, "exatamente um Fragmento Vivo")
 	if _fragment != null:
 		_check(_fragment.position == FRAGMENT_POS, "Fragmento no centro da arena %s" % FRAGMENT_POS)
+		_check(_fragment.get_meta(Room.PERSISTENT_ID_META, &"") == &"gallery_fragment_01" and _room.get_persistent_enemies().keys() == [&"gallery_fragment_01"],
+			"Fragmento com identificador persistente gallery_fragment_01")
 		for id: StringName in [&"west", &"east"]:
 			var d: float = absf(_room.get_entrance(id).position.x - _fragment.position.x)
 			_check(d >= MIN_ENTRANCE_DISTANCE, "entrada %s a %.0f px do Fragmento (mín. %.0f)" % [id, d, MIN_ENTRANCE_DISTANCE])
@@ -156,9 +158,9 @@ func _test_structure() -> void:
 		if state.get_node_instance(i) == null:
 			continue
 		for p: int in state.get_node_property_count(i):
-			if state.get_node_property_name(i, p) != &"position":
+			if not state.get_node_property_name(i, p) in [&"position", &"metadata/persistent_id"]:
 				extra.append("%s.%s" % [state.get_node_name(i), state.get_node_property_name(i, p)])
-	_check(extra.is_empty(), "instâncias só sobrescrevem a posição (sem mudar IA nem combate) %s" % [extra])
+	_check(extra.is_empty(), "instâncias só sobrescrevem a posição e o identificador persistente (sem mudar IA nem combate) %s" % [extra])
 
 
 func _test_terrain_cells() -> void:

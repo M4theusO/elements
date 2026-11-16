@@ -3,6 +3,8 @@ extends Node2D
 ## única, nunca recriada nem trocada de pai) numa entrada e aplica os limites da câmera.
 ## As saídas das salas (RoomExit) pedem a troca; a Game valida o destino e faz a transição
 ## com fade, sem recriar a Terra (vida, componentes e recargas continuam os mesmos).
+## Lembra, só em memória e só nesta sessão, os inimigos persistentes já derrotados de cada sala:
+## eles não voltam quando a sala é recarregada; os vivos voltam inteiros, no ponto de origem.
 
 signal room_changed(room: Room)
 
@@ -17,6 +19,8 @@ const FADE_TIME: float = 0.15
 var _room: Room
 var _room_path: String = ""
 var _transitioning: bool = false
+## Inimigos derrotados: { caminho da sala: { persistent_id: true } }. Some com a Game (sem save).
+var _defeated_enemies: Dictionary[String, Dictionary] = {}
 
 @onready var _room_slot: Node2D = $RoomSlot
 @onready var _terra: PlayerCharacter = $Terra
@@ -43,6 +47,19 @@ func get_terra() -> PlayerCharacter:
 
 func is_transitioning() -> bool:
 	return _transitioning
+
+
+func is_enemy_defeated(room_path: String, enemy_id: StringName) -> bool:
+	return _defeated_enemies.has(room_path) and _defeated_enemies[room_path].has(enemy_id)
+
+
+## Identificadores dos inimigos derrotados na sala (cópia, em ordem de registro).
+func get_defeated_enemies(room_path: String) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if _defeated_enemies.has(room_path):
+		for id: StringName in _defeated_enemies[room_path]:
+			result.append(id)
+	return result
 
 
 ## Carrega a sala na hora (sem fade), põe a Terra parada na entrada e aplica os limites da
@@ -108,6 +125,7 @@ func _swap_room(room: Room, room_path: String, entrance_id: StringName) -> void:
 		_room.queue_free()
 	_room = room
 	_room_path = room_path
+	_apply_enemy_persistence(room, room_path)
 	_room_slot.add_child(room)
 	for room_exit: RoomExit in room.get_exits():
 		room_exit.transition_requested.connect(request_transition)
@@ -116,6 +134,31 @@ func _swap_room(room: Room, room_path: String, entrance_id: StringName) -> void:
 	_terra.set_facing(room.get_entrance_facing(entrance_id))
 	_apply_camera_bounds(room.get_camera_bounds())
 	room_changed.emit(room)
+
+
+## Antes de a sala entrar na árvore: libera os inimigos já derrotados (nem chegam ao _ready) e
+## liga a morte dos vivos ao registro. A ligação leva o caminho da sala, então uma morte durante
+## o fade de saída fica na sala certa; morre com o inimigo (sem sinais acumulados entre visitas).
+func _apply_enemy_persistence(room: Room, room_path: String) -> void:
+	var enemies: Dictionary[StringName, Enemy] = room.get_persistent_enemies()
+	for id: StringName in enemies:
+		var enemy: Enemy = enemies[id]
+		if is_enemy_defeated(room_path, id):
+			enemy.get_parent().remove_child(enemy)
+			enemy.free()
+			continue
+		var health: HealthComponent = enemy.get_node_or_null(^"HealthComponent") as HealthComponent
+		if health == null:
+			push_error("Game: inimigo '%s' (%s) sem HealthComponent; não será lembrado." % [id, room_path])
+			continue
+		health.died.connect(_on_persistent_enemy_died.bind(room_path, id), CONNECT_ONE_SHOT)
+
+
+## Registra na hora da morte (antes da animação e do queue_free).
+func _on_persistent_enemy_died(room_path: String, enemy_id: StringName) -> void:
+	if not _defeated_enemies.has(room_path):
+		_defeated_enemies[room_path] = {}
+	_defeated_enemies[room_path][enemy_id] = true
 
 
 func _apply_camera_bounds(bounds: Rect2i) -> void:

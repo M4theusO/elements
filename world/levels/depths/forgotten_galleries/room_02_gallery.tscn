@@ -49,6 +49,7 @@ position = Vector2(720, 64)
 
 [node name="LivingFragment" parent="Enemies" unique_id=1895608511 instance=ExtResource("7_vb8bv")]
 position = Vector2(512, 320)
+metadata/persistent_id = &"gallery_fragment_01"
 
 [node name="Entrances" type="Node2D" parent="." unique_id=1298773418]
 

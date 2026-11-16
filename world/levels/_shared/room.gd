@@ -8,6 +8,9 @@ extends Node2D
 ##   Entrances (Marker2D, um por entrada; o nome é o identificador), Exits (RoomExit).
 ## As entradas marcam a posição dos pés da Terra.
 
+## Metadata da instância do inimigo com o identificador persistente (ver get_persistent_enemies()).
+const PERSISTENT_ID_META: StringName = &"persistent_id"
+
 ## Área visível da sala em pixels (limites da câmera). Múltiplos de 16, pelo menos 640x368.
 @export var camera_bounds: Rect2i = Rect2i(0, 0, 640, 368)
 
@@ -44,6 +47,34 @@ func get_exits() -> Array[RoomExit]:
 		for child: Node in exits.get_children():
 			if child is RoomExit:
 				result.append(child as RoomExit)
+	return result
+
+
+## Inimigos persistentes (filhos diretos de Enemies), por identificador. O identificador é o
+## metadata PERSISTENT_ID_META da instância (StringName ou String, não vazio, único na sala),
+## independente do nome do nó. Inimigos sem identificador válido ou com identificador repetido
+## ficam de fora (com erro no console): continuam no jogo, mas renascem sempre com a sala.
+func get_persistent_enemies() -> Dictionary[StringName, Enemy]:
+	var result: Dictionary[StringName, Enemy] = {}
+	var duplicated: Dictionary[StringName, bool] = {}
+	var enemies: Node = get_node_or_null(^"Enemies")
+	if enemies == null:
+		return result
+	for child: Node in enemies.get_children():
+		if not child is Enemy:
+			continue
+		# has_meta antes: get_meta com padrão null ainda acusa erro de chave ausente.
+		var value: Variant = child.get_meta(PERSISTENT_ID_META) if child.has_meta(PERSISTENT_ID_META) else null
+		var id: StringName = StringName(value) if value is StringName or value is String else &""
+		if id.is_empty():
+			push_error("Room '%s': inimigo '%s' sem identificador persistente (metadata '%s'); não será lembrado." % [name, child.name, PERSISTENT_ID_META])
+			continue
+		if result.has(id) or duplicated.has(id):
+			push_error("Room '%s': identificador persistente '%s' repetido (inimigo '%s'); nenhum inimigo com ele será lembrado." % [name, id, child.name])
+			result.erase(id)
+			duplicated[id] = true
+			continue
+		result[id] = child as Enemy
 	return result
 
 
