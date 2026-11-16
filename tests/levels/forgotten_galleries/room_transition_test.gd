@@ -11,6 +11,7 @@ extends SceneTree
 const GAME_PATH: String = "res://main/game.tscn"
 const ROOM_01: String = "res://world/levels/depths/forgotten_galleries/room_01_awakening.tscn"
 const ROOM_02: String = "res://world/levels/depths/forgotten_galleries/room_02_gallery.tscn"
+const ROOM_03: String = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
 const NOT_A_ROOM: String = "res://tests/movement_lab/movement_lab.tscn"
 const DUMMY_PATH: String = "res://entities/enemies/training_dummy/training_dummy.tscn"
 const FRAGMENT_PATH: String = "res://entities/enemies/living_fragment/living_fragment.tscn"
@@ -90,30 +91,43 @@ func _finish() -> void:
 
 func _test_exit_config() -> void:
 	print("-- Saídas e entradas")
-	var expected: Dictionary = {ROOM_01: [&"East", ROOM_02, &"west"], ROOM_02: [&"West", ROOM_01, &"east"]}
-	for path: String in [ROOM_01, ROOM_02]:
+	# Cada sala: [nome da saída, sala de destino, entrada de destino].
+	var expected: Dictionary = {
+		ROOM_01: [[&"East", ROOM_02, &"west"]],
+		ROOM_02: [[&"West", ROOM_01, &"east"], [&"East", ROOM_03, &"west"]],
+		ROOM_03: [[&"West", ROOM_02, &"east"]],
+	}
+	for path: String in expected:
 		var room: Room = (load(path) as PackedScene).instantiate() as Room
 		var exits: Array[RoomExit] = room.get_exits()
-		var spec: Array = expected[path]
-		_check(exits.size() == 1 and exits[0].name == spec[0], "%s: uma saída, %s" % [path.get_file(), spec[0]])
-		if exits.size() != 1:
+		var specs: Array = expected[path]
+		var names: Array[StringName] = []
+		for e: RoomExit in exits:
+			names.append(e.name)
+		var want: Array[StringName] = []
+		for spec: Array in specs:
+			want.append(spec[0])
+		_check(names == want, "%s: saídas %s" % [path.get_file(), want])
+		if names != want:
 			room.free()
 			continue
-		var e: RoomExit = exits[0]
-		_check(e.collision_layer == 0 and e.collision_mask == 4 and e.monitoring and not e.monitorable,
-			"%s: layer 0, mask só player (3), monitoring ligado, monitorable desligado" % e.name)
-		_check(e.target_room == spec[1] and e.target_entry == spec[2], "%s → %s (%s)" % [e.name, spec[1].get_file(), spec[2]])
-		var target: Room = (load(e.target_room) as PackedScene).instantiate() as Room
-		_check(target != null and target.has_entrance(e.target_entry), "o destino existe e tem a entrada %s" % e.target_entry)
-		if target != null:
-			target.free()
-		var shape: RectangleShape2D = (e.get_node("CollisionShape2D") as CollisionShape2D).shape as RectangleShape2D
-		var area: Rect2 = Rect2(e.position - shape.size / 2.0, shape.size)
-		var clear: bool = true
-		for marker: Node in room.get_node("Entrances").get_children():
-			var body: Rect2 = Rect2((marker as Marker2D).position - Vector2(TERRA_SIZE.x / 2.0, TERRA_SIZE.y), TERRA_SIZE)
-			clear = clear and not body.grow(4.0).intersects(area)
-		_check(clear, "%s: nenhuma entrada da sala fica dentro (ou a menos de 4 px) da área da saída" % path.get_file())
+		for i: int in exits.size():
+			var e: RoomExit = exits[i]
+			var spec: Array = specs[i]
+			_check(e.collision_layer == 0 and e.collision_mask == 4 and e.monitoring and not e.monitorable,
+				"%s/%s: layer 0, mask só player (3), monitoring ligado, monitorable desligado" % [path.get_file(), e.name])
+			_check(e.target_room == spec[1] and e.target_entry == spec[2], "%s → %s (%s)" % [e.name, spec[1].get_file(), spec[2]])
+			var target: Room = (load(e.target_room) as PackedScene).instantiate() as Room
+			_check(target != null and target.has_entrance(e.target_entry), "o destino existe e tem a entrada %s" % e.target_entry)
+			if target != null:
+				target.free()
+			var shape: RectangleShape2D = (e.get_node("CollisionShape2D") as CollisionShape2D).shape as RectangleShape2D
+			var area: Rect2 = Rect2(e.position - shape.size / 2.0, shape.size)
+			var clear: bool = true
+			for marker: Node in room.get_node("Entrances").get_children():
+				var body: Rect2 = Rect2((marker as Marker2D).position - Vector2(TERRA_SIZE.x / 2.0, TERRA_SIZE.y), TERRA_SIZE)
+				clear = clear and not body.grow(4.0).intersects(area)
+			_check(clear, "%s/%s: nenhuma entrada da sala fica dentro (ou a menos de 4 px) da área da saída" % [path.get_file(), e.name])
 		room.free()
 
 

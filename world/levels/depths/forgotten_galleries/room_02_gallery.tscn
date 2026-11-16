@@ -72,3 +72,15 @@ target_entry = &"east"
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Exits/West" unique_id=1237809613]
 shape = SubResource("RectangleShape2D_tpwd3")
+
+[node name="East" type="Area2D" parent="Exits"]
+position = Vector2(1008, 288)
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+script = ExtResource("8_f14b8")
+target_room = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
+target_entry = &"west"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Exits/East"]
+shape = SubResource("RectangleShape2D_tpwd3")

@@ -10,6 +10,7 @@ extends SceneTree
 const GAME_PATH: String = "res://main/game.tscn"
 const ROOM_01_PATH: String = "res://world/levels/depths/forgotten_galleries/room_01_awakening.tscn"
 const ROOM_PATH: String = "res://world/levels/depths/forgotten_galleries/room_02_gallery.tscn"
+const ROOM_03_PATH: String = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
 const TILESET_PATH: String = "res://world/tilesets/depths/depths_tileset.tres"
 const PARALLAX_PATH: String = "res://world/levels/depths/backgrounds/depths_parallax.tscn"
 const FRAGMENT_PATH: String = "res://entities/enemies/living_fragment/living_fragment.tscn"
@@ -40,6 +41,7 @@ const RISE_EAST: Rect2 = Rect2(768, 304, 64, 16)
 ## Arena plana entre as duas elevações (sem degraus nem paredes).
 const ARENA: Rect2 = Rect2(256, 320, 512, 0)
 const WEST_EXIT: Rect2 = Rect2(0, 256, 32, 64)
+const EAST_EXIT: Rect2 = Rect2(992, 256, 32, 64)
 const FRAGMENT_POS: Vector2 = Vector2(512, 320)
 const TERRA_HALF_WIDTH: float = 8.0
 const TERRA_SIZE: Vector2 = Vector2(16, 46)
@@ -132,14 +134,20 @@ func _test_structure() -> void:
 	_check(_room.get_entrance_facing(&"west") == 1.0 and _room.get_entrance_facing(&"east") == -1.0,
 		"chegando por west olha para a direita; por east, para a esquerda")
 	var exits: Array[RoomExit] = _room.get_exits()
-	_check(exits.size() == 1 and _room.get_node("Exits").get_child_count() == 1 and exits[0].name == &"West",
-		"uma única saída, West (east ainda sem transição)")
-	if exits.size() == 1:
+	_check(exits.size() == 2 and _room.get_node("Exits").get_child_count() == 2 and exits[0].name == &"West"
+		and exits[1].name == &"East", "duas saídas: West (Sala 01) e East (Sala 03)")
+	if exits.size() == 2:
 		var e: RoomExit = exits[0]
 		_check(e.target_room == ROOM_01_PATH and e.target_entry == &"east", "West leva à Sala 01, entrada east")
 		_check(e.collision_layer == 0 and e.collision_mask == 4 and e.monitoring and not e.monitorable,
 			"West: layer 0, mask só player, monitoring ligado, monitorable desligado")
 		_check(_exit_rect(e) == WEST_EXIT, "área da saída West %s (dentro da passagem)" % _exit_rect(e))
+		var east: RoomExit = exits[1]
+		_check(east.target_room == ROOM_03_PATH and east.target_entry == &"west"
+			and east.collision_layer == 0 and east.collision_mask == 4 and east.monitoring and not east.monitorable,
+			"East leva à Sala 03, entrada west (layer 0, mask só player)")
+		_check(_exit_rect(east) == EAST_EXIT and not _body_rect(EAST).grow(4.0).intersects(EAST_EXIT),
+			"área da saída East %s dentro da passagem; a entrada east fica fora dela" % _exit_rect(east))
 	var enemies: Array[Node] = _room.get_node("Enemies").get_children()
 	_check(enemies.size() == 1 and _fragment != null and _fragment.scene_file_path == FRAGMENT_PATH
 		and _count_type(_game, "Enemy") == 1, "exatamente um Fragmento Vivo")
