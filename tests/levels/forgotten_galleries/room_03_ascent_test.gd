@@ -12,6 +12,7 @@ extends SceneTree
 const GAME_PATH: String = "res://main/game.tscn"
 const ROOM_02: String = "res://world/levels/depths/forgotten_galleries/room_02_gallery.tscn"
 const ROOM_PATH: String = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
+const ROOM_04: String = "res://world/levels/depths/forgotten_galleries/room_04_crystals.tscn"
 const TILESET_PATH: String = "res://world/tilesets/depths/depths_tileset.tres"
 const PARALLAX_PATH: String = "res://world/levels/depths/backgrounds/depths_parallax.tscn"
 const PROPS_DIR: String = "res://world/props/depths/"
@@ -61,6 +62,7 @@ const F: Rect2 = Rect2(192, 432, 32, 0)
 const WEST: Vector2 = Vector2(56, 672)
 const EAST: Vector2 = Vector2(584, 224)
 const WEST_EXIT: Rect2 = Rect2(0, 608, 32, 64)
+const EAST_EXIT: Rect2 = Rect2(608, 160, 32, 64)
 
 const TERRA_HALF_WIDTH: float = 8.0
 const TERRA_SIZE: Vector2 = Vector2(16, 46)
@@ -143,13 +145,18 @@ func _test_structure() -> void:
 		and _room.get_entrance(&"east").position == EAST, "entradas west %s (embaixo) e east %s (em cima)" % [WEST, EAST])
 	_check(_room.get_entrance_facing(&"west") == 1.0 and _room.get_entrance_facing(&"east") == -1.0, "chegada por west olha para a direita; por east, para a esquerda")
 	var exits: Array[RoomExit] = _room.get_exits()
-	_check(exits.size() == 1 and _room.get_node("Exits").get_child_count() == 1 and exits[0].name == &"West",
-		"uma única saída, West; a de cima (Sala 04) ainda não existe")
-	if exits.size() == 1:
+	_check(exits.size() == 2 and _room.get_node("Exits").get_child_count() == 2 and exits[0].name == &"West"
+		and exits[1].name == &"East", "duas saídas: West (embaixo, Sala 02) e East (em cima, Sala 04)")
+	if exits.size() == 2:
 		var e: RoomExit = exits[0]
 		_check(e.target_room == ROOM_02 and e.target_entry == &"east", "West leva à Sala 02, entrada east")
 		_check(e.collision_layer == 0 and e.collision_mask == 4 and e.monitoring and not e.monitorable, "West: layer 0, mask só player")
 		_check(_exit_rect(e) == WEST_EXIT, "área da saída West %s (dentro da passagem de baixo)" % _exit_rect(e))
+		var east: RoomExit = exits[1]
+		_check(east.target_room == ROOM_04 and east.target_entry == &"west" and east.collision_layer == 0
+			and east.collision_mask == 4 and east.monitoring and not east.monitorable, "East leva à Sala 04, entrada west (layer 0, mask só player)")
+		_check(_exit_rect(east) == EAST_EXIT and not _body_rect(EAST).grow(4.0).intersects(EAST_EXIT),
+			"área da saída East %s dentro da passagem de cima; a entrada east fica fora dela" % _exit_rect(east))
 	_check(_room.get_node("Enemies").get_child_count() == 0 and _count_type(_game, "Enemy") == 0
 		and _room.get_persistent_enemies().is_empty(), "sem inimigos")
 	_check(_count_type(_room, "PlayerCharacter") == 0 and _count_type(_room, "Camera2D") == 0
@@ -214,7 +221,7 @@ func _test_terrain_cells() -> void:
 	var east_ok: bool = true
 	for y: int in range(EAST_PASSAGE_ROWS.x, EAST_PASSAGE_ROWS.y + 1):
 		east_ok = east_ok and not _is_rock(38, y) and not _is_rock(39, y) and _is_rock(40, y)
-	_check(east_ok and _is_rock(38, 14) and _is_rock(38, 9), "passagem de cima (leste) de 4 tiles sobre a saliência do topo, fechada pela moldura até a Sala 04")
+	_check(east_ok and _is_rock(38, 14) and _is_rock(38, 9), "passagem de cima (leste) de 4 tiles sobre a saliência do topo, moldura atrás dela fora da câmera")
 
 
 ## Regras de altura livre conferidas célula a célula.
@@ -365,12 +372,13 @@ func _test_continuous_climb() -> void:
 		steps += 1
 	_check(steps == path.size(), "sobe sem recomeçar: %d de %d saltos (pés em y %.0f)" % [steps, path.size(), _terra.global_position.y])
 	_check(cam.ok, "a câmera acompanha a subida quadro a quadro, sem atraso nem salto (maior passo %.1f px)%s" % [cam.max_step, cam.detail])
-	# No topo: anda até a passagem de cima, fechada (a Sala 04 não existe).
+	# No topo: anda até a passagem de cima (saída desligada neste teste; a transição para a
+	# Sala 04 tem teste próprio em room_04_crystals_test.gd).
 	Input.action_press("move_right")
 	await _wait(150)
 	Input.action_release("move_right")
 	_check(absf(_terra.global_position.x - (BOUNDS.end.x - TERRA_HALF_WIDTH)) < 0.5 and absf(_terra.global_position.y - TOP.position.y) < 0.5
-		and _game.call("get_room") == _room, "a passagem de cima termina na moldura, sem transição")
+		and _game.call("get_room") == _room, "a passagem de cima termina na moldura (com a saída desligada, sem transição)")
 
 
 ## Parte do ponto atual (já na superfície `src`): anda até a borda e pula. Retorna se pousou.

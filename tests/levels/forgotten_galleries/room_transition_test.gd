@@ -12,6 +12,7 @@ const GAME_PATH: String = "res://main/game.tscn"
 const ROOM_01: String = "res://world/levels/depths/forgotten_galleries/room_01_awakening.tscn"
 const ROOM_02: String = "res://world/levels/depths/forgotten_galleries/room_02_gallery.tscn"
 const ROOM_03: String = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
+const ROOM_04: String = "res://world/levels/depths/forgotten_galleries/room_04_crystals.tscn"
 const NOT_A_ROOM: String = "res://tests/movement_lab/movement_lab.tscn"
 const DUMMY_PATH: String = "res://entities/enemies/training_dummy/training_dummy.tscn"
 const FRAGMENT_PATH: String = "res://entities/enemies/living_fragment/living_fragment.tscn"
@@ -95,7 +96,8 @@ func _test_exit_config() -> void:
 	var expected: Dictionary = {
 		ROOM_01: [[&"East", ROOM_02, &"west"]],
 		ROOM_02: [[&"West", ROOM_01, &"east"], [&"East", ROOM_03, &"west"]],
-		ROOM_03: [[&"West", ROOM_02, &"east"]],
+		ROOM_03: [[&"West", ROOM_02, &"east"], [&"East", ROOM_04, &"west"]],
+		ROOM_04: [[&"West", ROOM_03, &"east"]],
 	}
 	for path: String in expected:
 		var room: Room = (load(path) as PackedScene).instantiate() as Room
