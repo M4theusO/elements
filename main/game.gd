@@ -12,12 +12,16 @@ extends Node2D
 ## quando a animação de morte termina (death_finished), a Game pausa o mundo e abre a
 ## GameOverScreen (camada 20, funciona pausada). "Tentar novamente" (retry_requested) reinicia a
 ## tentativa: escurece com o mundo pausado, começa uma nova tentativa, recria a sala atual, faz a
-## Terra renascer na entrada pela qual chegou a ela, despausa e clareia; o controle (e a contagem
-## da invulnerabilidade de renascimento) só volta no fim do clarear.
+## Terra renascer na entrada pela qual chegou a ela e clareia, tudo com o mundo pausado; no fim do
+## clarear, Terra e inimigos voltam juntos (e a invulnerabilidade de renascimento começa a contar).
+## Transições: a Hurtbox da Terra fica bloqueada do pedido até a volta do controle (ver
+## request_transition() e _run_transition()).
 
 signal room_changed(room: Room)
 ## Reinício concluído: Terra viva, no controle, mundo rodando e tela clara.
 signal attempt_restarted(attempt: int)
+## Fim de uma transição (controle devolvido). swapped = false quando foi cancelada antes da troca.
+signal transition_finished(swapped: bool)
 
 ## Duração de cada metade do fade (escurecer e clarear).
 const FADE_TIME: float = 0.15
@@ -160,21 +164,48 @@ func request_transition(room_path: String, entrance_id: StringName) -> bool:
 	if room == null:
 		return false
 	_transitioning = true
+	# Proteção contra dano a partir daqui, ainda dentro do body_entered: num tick de física os
+	# sinais de área vêm antes dos _physics_process (inclusive das Hitbox inimigas), então
+	# nenhum golpe do mesmo tick passa. Não mexe no contador de invulnerabilidade da Terra.
+	_terra.get_hurtbox().set_blocked(true)
 	# Adiado: o pedido chega no meio do passo de física (body_entered), quando não se pode
 	# tirar corpos do espaço físico.
 	_run_transition.call_deferred(room, room_path, entrance_id)
 	return true
 
 
+## O ponto de efetivação da troca é _swap_room(): antes dele a sala de origem é a atual;
+## depois, a de destino. Uma morte antes desse ponto (só por dano que não passe pela Hurtbox,
+## já que ela está bloqueada) cancela a transição: a sala de destino, ainda fora da árvore, é
+## liberada, a Terra fica onde está e a morte segue (Game Over e renascimento na sala de origem).
+## Uma morte depois da troca vale para a sala nova. Em todos os caminhos, _end_transition()
+## devolve o controle, libera a Hurtbox e encerra o estado de transição.
 func _run_transition(room: Room, room_path: String, entrance_id: StringName) -> void:
+	if _terra.is_dead():
+		# Morreu entre o pedido e o início da troca: cancela sem fade.
+		room.free()
+		_end_transition(false)
+		return
 	# Sem controle durante a troca: nada de golpe, onda ou pulo atravessando a porta.
 	_terra.interrupt_actions()
 	_terra.process_mode = Node.PROCESS_MODE_DISABLED
 	await _fade_to(1.0)
+	if _terra.is_dead():
+		# Morreu durante o escurecer: a sala de origem continua a atual.
+		room.free()
+		await _fade_to(0.0)
+		_end_transition(false)
+		return
 	_swap_room(room, room_path, entrance_id)
 	await _fade_to(0.0)
+	_end_transition(true)
+
+
+func _end_transition(swapped: bool) -> void:
 	_terra.process_mode = Node.PROCESS_MODE_INHERIT
+	_terra.get_hurtbox().set_blocked(false)
 	_transitioning = false
+	transition_finished.emit(swapped)
 
 
 ## Carrega e confere a sala sem tocar na atual. Retorna null (com erro no console) se falhar.
@@ -248,9 +279,15 @@ func _on_persistent_enemy_died(room_path: String, enemy_id: StringName, scope: S
 
 ## Fim da animação de morte da Terra (emitido uma vez por morte): pausa o mundo e abre a tela.
 ## O reinício só começa quando o jogador confirma (retry_requested).
+## Se a transição ainda estiver em andamento, espera ela terminar (ou ser cancelada) antes de
+## pausar: pausar no meio deixaria o fade da transição parado e _transitioning preso.
 func _on_terra_death_finished() -> void:
 	if _game_over.is_open() or _retrying:
 		return
+	if _transitioning:
+		await transition_finished
+		if _game_over.is_open() or _retrying or not _terra.is_dead():
+			return
 	_paused_world = true
 	get_tree().paused = true
 	_game_over.open()
@@ -268,15 +305,17 @@ func _on_retry_requested() -> void:
 ##  1. escurece com o mundo ainda pausado (tween que processa durante a pausa);
 ##  2. com a tela preta: fecha o Game Over, começa a nova tentativa (limpa as derrotas
 ##     attempt de todas as salas) e só então recria a sala atual, na entrada de chegada;
-##  3. revive() (vida cheia, ações canceladas, invulnerabilidade); a Terra fica desligada,
-##     então a invulnerabilidade, que conta em _physics_process da Hurtbox, não corre;
-##  4. despausa (inimigos voltam a se mover) e clareia com a Terra ainda sem controle;
-##  5. devolve o controle (a invulnerabilidade começa a contar aqui) e emite attempt_restarted.
-## Se a Game sair da árvore no meio, o tween para e _exit_tree despausa a árvore.
+##  3. revive() (vida cheia, ações canceladas, invulnerabilidade); com o mundo pausado, a
+##     invulnerabilidade, que conta em _physics_process da Hurtbox, não corre;
+##  4. clareia com o mundo ainda pausado (nem Terra nem inimigos se movem);
+##  5. despausa: Terra e inimigos voltam juntos, a invulnerabilidade começa a contar, e emite
+##     attempt_restarted.
+## Se a Game sair da árvore no meio, _exit_tree despausa a árvore e o reinício espera a volta
+## (tree_entered; _enter_tree pausa de novo). Liberada, a sequência simplesmente termina.
 func _run_retry() -> void:
 	await _fade_to(1.0, true)
 	if not is_inside_tree():
-		return
+		await tree_entered
 	_game_over.close()
 	start_new_attempt()
 	var room: Room = _instantiate_room(_room_path, _entrance_id)
@@ -287,23 +326,26 @@ func _run_retry() -> void:
 		push_error("Game: não foi possível recriar a sala '%s'; renascendo sem recriá-la." % _room_path)
 		_place_terra(_room, _entrance_id)
 	_terra.revive()
-	_terra.process_mode = Node.PROCESS_MODE_DISABLED
-	_paused_world = false
-	get_tree().paused = false
 	await _fade_to(0.0, true)
 	if not is_inside_tree():
-		return
-	_terra.process_mode = Node.PROCESS_MODE_INHERIT
+		await tree_entered
+	_paused_world = false
+	get_tree().paused = false
 	_retrying = false
 	attempt_restarted.emit(_attempt)
 
 
 ## A pausa é da Game: se ela sair da árvore com o mundo pausado por ela (ex.: troca de cena ou
-## fim de um teste no Game Over), a árvore não fica pausada para quem vier depois.
+## fim de um teste no Game Over), a árvore não fica pausada para quem vier depois; se voltar
+## ainda no Game Over ou no reinício, a pausa volta junto.
 func _exit_tree() -> void:
 	if _paused_world:
-		_paused_world = false
 		get_tree().paused = false
+
+
+func _enter_tree() -> void:
+	if _paused_world:
+		get_tree().paused = true
 
 
 func _apply_camera_bounds(bounds: Rect2i) -> void:

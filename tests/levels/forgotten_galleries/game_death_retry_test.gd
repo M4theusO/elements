@@ -220,6 +220,9 @@ func _test_retry_flow() -> void:
 	_check(obs.swap_terra_dead, "na recriação, a limpeza e a sala nova vêm antes do revive()")
 	_check(not obs.control_leak, "Terra sem controle (pausada ou desligada) do retry até attempt_restarted")
 	_check(not obs.moved, "direção segurada durante o clarear não move a Terra")
+	_check(not obs.unpaused_early and not (obs.enemy_watch as Dictionary).is_empty() and obs.enemies_still_in_fade,
+		"mundo pausado durante todo o clarear: inimigos parados (%d observados)" % (obs.enemy_watch as Dictionary).size())
+	_check(obs.released_together, "Terra e inimigos liberados juntos, no instante de attempt_restarted")
 	_check(obs.min_invuln > 0.999, "invulnerabilidade não corre durante o fade (mínimo %.3f s)" % obs.min_invuln)
 	_check(obs.hit_during_fade_ignored, "golpe durante o clarear ignorado (vida continua 5)")
 	# Estado final.
@@ -325,7 +328,7 @@ func _test_permanent_and_enemy_during_fade() -> void:
 	var obs: Dictionary = await _confirm_and_watch(false, true)
 	_check(obs.restarted == 1, "reinício concluído")
 	_check(obs.swap_names == ["LivingFragment"], "na recriação: volta o Fragmento comum; o permanent não %s" % [obs.swap_names])
-	_check(obs.killed_during_fade, "Fragmento derrotado durante o clarear (mundo já rodando)")
+	_check(obs.killed_during_fade, "Fragmento derrotado durante o clarear (dano direto, mundo pausado): registrado")
 	_check(_game.call("get_defeated_enemies", SCOPE_ROOM) == [GUARDIAN_ID, FRAGMENT_ID]
 		and _game.call("get_defeated_enemy_scope", SCOPE_ROOM, GUARDIAN_ID) == Room.SCOPE_PERMANENT,
 		"permanent preservada; a derrota durante o clarear entra na tentativa nova %s" % [_game.call("get_defeated_enemies", SCOPE_ROOM)])
@@ -443,8 +446,9 @@ func _wait_accepting() -> void:
 
 ## Confirma "Tentar novamente" (ação jump) e acompanha o reinício quadro a quadro até
 ## attempt_restarted. extra: tenta pedidos repetidos, transição, direção segurada e golpe
-## durante o clarear. kill_during_fade: derrota o Fragmento da sala nova quando o mundo
-## volta a rodar, antes do fim do clarear.
+## durante o clarear. kill_during_fade: derrota o Fragmento da sala nova (dano direto) durante
+## o clarear, com o mundo ainda pausado. Também confere inimigos parados no clarear e a
+## liberação simultânea de Terra e inimigos no attempt_restarted (Etapa 2D).
 func _confirm_and_watch(extra: bool = false, kill_during_fade: bool = false) -> Dictionary:
 	var terra: PlayerCharacter = _terra()
 	var go: GameOverScreen = _screen()
@@ -455,6 +459,7 @@ func _confirm_and_watch(extra: bool = false, kill_during_fade: bool = false) -> 
 		"control_leak": false, "moved": false, "min_invuln": 99.0, "hit_during_fade_ignored": true,
 		"duplicates_ignored": true, "transition_refused": true, "killed_during_fade": false,
 		"end_position": Vector2.ZERO, "restart_invuln": 0.0, "restart_tick": 0,
+		"unpaused_early": false, "released_together": false, "enemies_still_in_fade": false, "enemy_watch": {},
 	}
 	var on_swap: Callable = func(_room: Room) -> void:
 		obs.swap_count += 1
@@ -472,6 +477,15 @@ func _confirm_and_watch(extra: bool = false, kill_during_fade: bool = false) -> 
 		obs.end_position = terra.global_position
 		obs.restart_invuln = terra.get_hurtbox().get_invulnerability_left()
 		obs.restart_tick = Engine.get_physics_frames()
+		# Liberação simultânea: no instante do sinal, mundo despausado e Terra e inimigos processando.
+		var all_free: bool = not paused and terra.can_process() and not _game.call("is_retrying")
+		var still: bool = true
+		for enemy: Variant in obs.enemy_watch:
+			if is_instance_valid(enemy) and not (enemy as Enemy).is_dead():
+				all_free = all_free and (enemy as Enemy).can_process()
+				still = still and (enemy as Enemy).global_position == obs.enemy_watch[enemy]
+		obs.released_together = all_free
+		obs.enemies_still_in_fade = still
 	_game.connect("room_changed", on_swap)
 	_game.connect("attempt_restarted", on_restarted)
 	var attempt_before: int = _game.call("get_attempt")
@@ -484,6 +498,8 @@ func _confirm_and_watch(extra: bool = false, kill_during_fade: bool = false) -> 
 		go.retry_requested.emit()
 		obs.transition_refused = not _game.call("request_transition", ROOM_01, &"east")
 	var hold_from: Vector2 = Vector2.INF
+	var enemy_watch: Dictionary = {}
+	obs.enemy_watch = enemy_watch
 	for i: int in MAX_FRAMES:
 		if obs.restarted > 0:
 			break
@@ -491,9 +507,16 @@ func _confirm_and_watch(extra: bool = false, kill_during_fade: bool = false) -> 
 			obs.control_leak = true
 		if not terra.is_dead():
 			obs.min_invuln = minf(obs.min_invuln, terra.get_hurtbox().get_invulnerability_left())
-		# Mundo rodando de novo (clarear): direção segurada, golpe e inimigo derrotado.
-		if obs.swap_count > 0 and not paused:
-			if extra and hold_from == Vector2.INF:
+		# Clarear (depois da troca): mundo ainda pausado; direção segurada, golpe, inimigos
+		# parados e inimigo derrotado por dano direto.
+		if obs.swap_count > 0:
+			if not paused:
+				obs.unpaused_early = true
+			if enemy_watch.is_empty():
+				for child: Node in (_game.call("get_room") as Room).get_node("Enemies").get_children():
+					if child is Enemy:
+						enemy_watch[child] = (child as Enemy).global_position
+			if extra and hold_from == Vector2.INF and not terra.is_dead():
 				hold_from = terra.global_position
 				Input.action_press(&"move_right")
 				terra.get_hurtbox().receive_hit(1)

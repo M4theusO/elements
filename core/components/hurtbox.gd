@@ -16,6 +16,8 @@ const TIME_EPSILON: float = 0.0001
 @export_range(0.0, 5.0, 0.05, "suffix:s") var invulnerability_time: float = 0.0
 
 var _invulnerable_left: float = 0.0
+## Bloqueio externo (ver set_blocked()); independente do contador de invulnerabilidade.
+var _blocked: bool = false
 var _last_hit_direction: Vector2 = Vector2.ZERO
 
 
@@ -32,8 +34,9 @@ func _physics_process(delta: float) -> void:
 ## hit_direction: trajetória do golpe no mundo (vetor unitário, ver Hitbox.get_hit_direction());
 ## Vector2.ZERO = desconhecida (chamadas diretas, sem Hitbox).
 func receive_hit(damage: int, hit_direction: Vector2 = Vector2.ZERO) -> void:
-	# Ignorado durante a invulnerabilidade (inclusive um segundo golpe no mesmo tick).
-	if is_invulnerable():
+	# Ignorado durante a invulnerabilidade (inclusive um segundo golpe no mesmo tick) e
+	# enquanto bloqueada.
+	if is_invulnerable() or _blocked:
 		return
 	_last_hit_direction = hit_direction
 	var taken: int = maxi(_get_damage_taken(damage, hit_direction), 0)
@@ -47,6 +50,17 @@ func receive_hit(damage: int, hit_direction: Vector2 = Vector2.ZERO) -> void:
 ## Não encurta uma invulnerabilidade mais longa já em andamento.
 func start_invulnerability(seconds: float) -> void:
 	_invulnerable_left = maxf(_invulnerable_left, seconds)
+
+
+## Bloqueia (true) ou libera (false) todos os golpes, sem tocar no contador de invulnerabilidade
+## (que não é reduzido nem reiniciado). Para proteções controladas por outro nó, como a
+## travessia de uma porta; quem bloqueia é responsável por liberar.
+func set_blocked(value: bool) -> void:
+	_blocked = value
+
+
+func is_blocked() -> bool:
+	return _blocked
 
 
 func is_invulnerable() -> bool:
