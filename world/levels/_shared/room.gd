@@ -10,6 +10,13 @@ extends Node2D
 
 ## Metadata da instância do inimigo com o identificador persistente (ver get_persistent_enemies()).
 const PERSISTENT_ID_META: StringName = &"persistent_id"
+## Metadata opcional da instância do inimigo com o escopo da derrota (ver get_enemy_persistence_scope()).
+const PERSISTENCE_SCOPE_META: StringName = &"persistence_scope"
+## A derrota vale só na tentativa atual: o inimigo volta quando uma nova tentativa começa
+## (inimigos comuns; padrão quando a metadata não existe).
+const SCOPE_ATTEMPT: StringName = &"attempt"
+## A derrota continua registrada em novas tentativas (ex.: chefes). Ainda só em memória.
+const SCOPE_PERMANENT: StringName = &"permanent"
 
 ## Área visível da sala em pixels (limites da câmera). Múltiplos de 16, pelo menos 640x368.
 @export var camera_bounds: Rect2i = Rect2i(0, 0, 640, 368)
@@ -76,6 +83,23 @@ func get_persistent_enemies() -> Dictionary[StringName, Enemy]:
 			continue
 		result[id] = child as Enemy
 	return result
+
+
+## Escopo da derrota do inimigo, pela metadata PERSISTENCE_SCOPE_META da instância:
+##  - ausente -> SCOPE_ATTEMPT (inimigo comum);
+##  - "attempt" ou "permanent" (StringName ou String) -> o próprio escopo;
+##  - qualquer outro valor (texto desconhecido, vazio, outro tipo) -> erro no console e
+##    SCOPE_ATTEMPT: um escopo mal escrito nunca torna uma derrota permanente por engano.
+func get_enemy_persistence_scope(enemy: Node) -> StringName:
+	if enemy == null or not enemy.has_meta(PERSISTENCE_SCOPE_META):
+		return SCOPE_ATTEMPT
+	var value: Variant = enemy.get_meta(PERSISTENCE_SCOPE_META)
+	if value is StringName or value is String:
+		var scope: StringName = StringName(value)
+		if scope == SCOPE_ATTEMPT or scope == SCOPE_PERMANENT:
+			return scope
+	push_error("Room '%s': inimigo '%s' com escopo de persistência inválido (%s); usando '%s'." % [name, enemy.name, var_to_str(value), SCOPE_ATTEMPT])
+	return SCOPE_ATTEMPT
 
 
 func _find_entrance(id: StringName) -> Marker2D:

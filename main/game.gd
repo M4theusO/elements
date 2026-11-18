@@ -5,6 +5,9 @@ extends Node2D
 ## com fade, sem recriar a Terra (vida, componentes e recargas continuam os mesmos).
 ## Lembra, só em memória e só nesta sessão, os inimigos persistentes já derrotados de cada sala:
 ## eles não voltam quando a sala é recarregada; os vivos voltam inteiros, no ponto de origem.
+## Cada derrota guarda o escopo do inimigo (Room.get_enemy_persistence_scope()): uma nova
+## tentativa (start_new_attempt()) esquece as derrotas "attempt" de todas as salas e mantém
+## as "permanent".
 
 signal room_changed(room: Room)
 
@@ -19,8 +22,11 @@ const FADE_TIME: float = 0.15
 var _room: Room
 var _room_path: String = ""
 var _transitioning: bool = false
-## Inimigos derrotados: { caminho da sala: { persistent_id: true } }. Some com a Game (sem save).
+## Inimigos derrotados: { caminho da sala: { persistent_id: escopo (Room.SCOPE_*) } }.
+## Registro único da Game, para os dois escopos; some com a Game (sem save).
 var _defeated_enemies: Dictionary[String, Dictionary] = {}
+## Número da tentativa atual (a primeira é 1).
+var _attempt: int = 1
 
 @onready var _room_slot: Node2D = $RoomSlot
 @onready var _terra: PlayerCharacter = $Terra
@@ -60,6 +66,36 @@ func get_defeated_enemies(room_path: String) -> Array[StringName]:
 		for id: StringName in _defeated_enemies[room_path]:
 			result.append(id)
 	return result
+
+
+## Escopo registrado para a derrota (Room.SCOPE_ATTEMPT ou SCOPE_PERMANENT), ou &"" se o
+## inimigo não estiver derrotado.
+func get_defeated_enemy_scope(room_path: String, enemy_id: StringName) -> StringName:
+	if not is_enemy_defeated(room_path, enemy_id):
+		return &""
+	return _defeated_enemies[room_path][enemy_id]
+
+
+func get_attempt() -> int:
+	return _attempt
+
+
+## Começa uma nova tentativa: esquece as derrotas de escopo attempt de TODAS as salas (os
+## inimigos comuns voltam na próxima vez que cada sala for carregada) e mantém as permanent.
+## Não recarrega a sala atual nem mexe nos inimigos já carregados; quem reinicia a sala é o
+## fluxo de renascimento. Retorna quantas derrotas foram esquecidas.
+func start_new_attempt() -> int:
+	var removed: int = 0
+	for room_path: String in _defeated_enemies.keys():
+		var defeated: Dictionary = _defeated_enemies[room_path]
+		for enemy_id: StringName in defeated.keys():
+			if defeated[enemy_id] != Room.SCOPE_PERMANENT:
+				defeated.erase(enemy_id)
+				removed += 1
+		if defeated.is_empty():
+			_defeated_enemies.erase(room_path)
+	_attempt += 1
+	return removed
 
 
 ## Carrega a sala na hora (sem fade), põe a Terra parada na entrada e aplica os limites da
@@ -151,14 +187,15 @@ func _apply_enemy_persistence(room: Room, room_path: String) -> void:
 		if health == null:
 			push_error("Game: inimigo '%s' (%s) sem HealthComponent; não será lembrado." % [id, room_path])
 			continue
-		health.died.connect(_on_persistent_enemy_died.bind(room_path, id), CONNECT_ONE_SHOT)
+		var scope: StringName = room.get_enemy_persistence_scope(enemy)
+		health.died.connect(_on_persistent_enemy_died.bind(room_path, id, scope), CONNECT_ONE_SHOT)
 
 
 ## Registra na hora da morte (antes da animação e do queue_free).
-func _on_persistent_enemy_died(room_path: String, enemy_id: StringName) -> void:
+func _on_persistent_enemy_died(room_path: String, enemy_id: StringName, scope: StringName) -> void:
 	if not _defeated_enemies.has(room_path):
 		_defeated_enemies[room_path] = {}
-	_defeated_enemies[room_path][enemy_id] = true
+	_defeated_enemies[room_path][enemy_id] = scope
 
 
 func _apply_camera_bounds(bounds: Rect2i) -> void:
