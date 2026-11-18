@@ -8,6 +8,9 @@ extends Node2D
 ## Cada derrota guarda o escopo do inimigo (Room.get_enemy_persistence_scope()): uma nova
 ## tentativa (start_new_attempt()) esquece as derrotas "attempt" de todas as salas e mantém
 ## as "permanent".
+## Morte da Terra: a HUD (PlayerHud, camada 5, abaixo do fade) mostra a vida da Terra persistente;
+## quando a animação de morte termina (death_finished), a Game pausa o mundo e abre a
+## GameOverScreen (camada 20, funciona pausada). O "Tentar novamente" ainda não reinicia nada.
 
 signal room_changed(room: Room)
 
@@ -27,16 +30,35 @@ var _transitioning: bool = false
 var _defeated_enemies: Dictionary[String, Dictionary] = {}
 ## Número da tentativa atual (a primeira é 1).
 var _attempt: int = 1
+## Verdadeiro enquanto a árvore estiver pausada pela Game (Game Over).
+var _paused_world: bool = false
 
 @onready var _room_slot: Node2D = $RoomSlot
 @onready var _terra: PlayerCharacter = $Terra
 @onready var _camera: Camera2D = $Terra/Camera2D
 @onready var _fade: ColorRect = $Fade/ColorRect
+@onready var _hud: PlayerHud = $PlayerHud
+@onready var _game_over: GameOverScreen = $GameOverScreen
 
 
 func _ready() -> void:
 	_fade.modulate.a = 0.0
+	# Uma ligação só: _ready roda uma vez por instância da Game, e a Terra nunca é recriada.
+	_terra.death_finished.connect(_on_terra_death_finished)
 	load_room(start_room, start_entrance)
+
+
+func get_hud() -> PlayerHud:
+	return _hud
+
+
+func get_game_over_screen() -> GameOverScreen:
+	return _game_over
+
+
+## Verdadeiro do fim da animação de morte até um reinício (Etapa 2C).
+func is_game_over() -> bool:
+	return _game_over.is_open()
 
 
 func get_room() -> Room:
@@ -108,7 +130,8 @@ func load_room(room_path: String, entrance_id: StringName) -> bool:
 	return true
 
 
-## Pede a troca de sala com fade. Ignorada durante outra transição ou com a Terra morta.
+## Pede a troca de sala com fade. Ignorada durante outra transição ou com a Terra morta
+## (inclusive durante o Game Over, que só abre com a Terra morta).
 ## O destino é validado antes de qualquer mudança: se falhar, a sala atual e o controle da
 ## Terra continuam como estavam. Retorna se a transição começou.
 func request_transition(room_path: String, entrance_id: StringName) -> bool:
@@ -196,6 +219,24 @@ func _on_persistent_enemy_died(room_path: String, enemy_id: StringName, scope: S
 	if not _defeated_enemies.has(room_path):
 		_defeated_enemies[room_path] = {}
 	_defeated_enemies[room_path][enemy_id] = scope
+
+
+## Fim da animação de morte da Terra (emitido uma vez por morte): pausa o mundo e abre a tela.
+## A Game não liga retry_requested ainda: o reinício da tentativa é a Etapa 2C.
+func _on_terra_death_finished() -> void:
+	if _game_over.is_open():
+		return
+	_paused_world = true
+	get_tree().paused = true
+	_game_over.open()
+
+
+## A pausa é da Game: se ela sair da árvore com o mundo pausado por ela (ex.: troca de cena ou
+## fim de um teste no Game Over), a árvore não fica pausada para quem vier depois.
+func _exit_tree() -> void:
+	if _paused_world:
+		_paused_world = false
+		get_tree().paused = false
 
 
 func _apply_camera_bounds(bounds: Rect2i) -> void:
