@@ -18,6 +18,9 @@
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_o3ghs"]
 size = Vector2(32, 64)
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_r5west"]
+size = Vector2(32, 64)
+
 [node name="Room04Crystals" type="Node2D" unique_id=358570793]
 script = ExtResource("1_yy8pj")
 camera_bounds = Rect2i(0, 0, 896, 368)
@@ -102,3 +105,15 @@ target_entry = &"east"
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Exits/West" unique_id=1920845163]
 shape = SubResource("RectangleShape2D_o3ghs")
+
+[node name="East" type="Area2D" parent="Exits" unique_id=1377150946]
+position = Vector2(880, 288)
+collision_layer = 0
+collision_mask = 4
+monitorable = false
+script = ExtResource("14_44wvx")
+target_room = "res://world/levels/depths/forgotten_galleries/room_05_ancient_gate.tscn"
+target_entry = &"west"
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Exits/East" unique_id=609734251]
+shape = SubResource("RectangleShape2D_r5west")

@@ -59,6 +59,14 @@ func _ready() -> void:
 	# Uma ligação só: _ready roda uma vez por instância da Game, e a Terra nunca é recriada.
 	_terra.death_finished.connect(_on_terra_death_finished)
 	_game_over.retry_requested.connect(_on_retry_requested)
+	# Desligada (transição) ou pausada (Game Over, reinício), a Terra fica no espaço físico como
+	# corpo estático em vez de sair dele. Fora do espaço, o servidor ignora o teleporte para a
+	# entrada e, ao ser religada, ela volta por um passo na posição antiga: se ali houver uma
+	# RoomExit da sala nova (ex.: Sala 05 → 04, saídas oeste nas mesmas coordenadas), ela dispara.
+	# Nenhum corpo tem a layer player na mask (só áreas: saídas e detecção dos inimigos), então
+	# isso não cria colisões; a Hurtbox (Area2D filha) continua saindo do espaço e bloqueada,
+	# sem dano no fade.
+	_terra.disable_mode = CollisionObject2D.DISABLE_MODE_MAKE_STATIC
 	load_room(start_room, start_entrance)
 
 

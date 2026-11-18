@@ -1,6 +1,6 @@
 extends SceneTree
 ## Teste automatizado da Sala 04 — Cristais (Galerias Esquecidas, etapa 5): estrutura,
-## dimensões, entradas e saídas (a leste fica reservada para a Sala 05, sem saída), terreno
+## dimensões, entradas e saídas (oeste para a Sala 03, leste para a Sala 05), terreno
 ## (peças, moldura, passagens, pilares sólidos), props, o único Escavador de Cristal (patrulha,
 ## chegada sem encontro, detecção, investida interrompida pelos dois pilares, esquiva subindo no
 ## pilar, janela de atordoamento, contra-ataque e derrota com golpes reais), câmera e fundo,
@@ -14,6 +14,7 @@ extends SceneTree
 const GAME_PATH: String = "res://main/game.tscn"
 const ROOM_03: String = "res://world/levels/depths/forgotten_galleries/room_03_ascent.tscn"
 const ROOM_PATH: String = "res://world/levels/depths/forgotten_galleries/room_04_crystals.tscn"
+const ROOM_05: String = "res://world/levels/depths/forgotten_galleries/room_05_ancient_gate.tscn"
 const TILESET_PATH: String = "res://world/tilesets/depths/depths_tileset.tres"
 const PARALLAX_PATH: String = "res://world/levels/depths/backgrounds/depths_parallax.tscn"
 const BURROWER_PATH: String = "res://entities/enemies/crystal_burrower/crystal_burrower.tscn"
@@ -50,6 +51,7 @@ const RISE_EAST: Rect2 = Rect2(608, 304, 64, 16)
 ## Arena plana entre os pilares.
 const ARENA: Rect2 = Rect2(320, 320, 256, 0)
 const WEST_EXIT: Rect2 = Rect2(0, 256, 32, 64)
+const EAST_EXIT: Rect2 = Rect2(864, 256, 32, 64)
 ## Saída de cima da Sala 03 e a entrada dela (lado da Sala 03).
 const ROOM_03_EAST: Vector2 = Vector2(584, 224)
 const ROOM_03_EAST_EXIT: Rect2 = Rect2(608, 160, 32, 64)
@@ -140,13 +142,18 @@ func _test_structure() -> void:
 		if child is Marker2D:
 			entrances.append(String(child.name))
 	_check(entrances == ["west", "east"] and _room.get_entrance(&"west").position == WEST
-		and _room.get_entrance(&"east").position == EAST, "entradas west %s e east %s (reservada para a Sala 05)" % [WEST, EAST])
+		and _room.get_entrance(&"east").position == EAST, "entradas west %s e east %s (chegada da Sala 05)" % [WEST, EAST])
 	_check(_room.get_entrance_facing(&"west") == 1.0 and _room.get_entrance_facing(&"east") == -1.0,
 		"chegando por west olha para a direita; por east, para a esquerda")
 	var exits: Array[RoomExit] = _room.get_exits()
-	_check(exits.size() == 1 and _room.get_node("Exits").get_child_count() == 1 and exits[0].name == &"West",
-		"uma única saída, West; a leste fica inativa até a Sala 05")
-	if exits.size() == 1:
+	_check(exits.size() == 2 and _room.get_node("Exits").get_child_count() == 2 and exits[0].name == &"West"
+		and exits[1].name == &"East", "duas saídas: West (Sala 03) e East (Sala 05)")
+	if exits.size() == 2:
+		var east: RoomExit = exits[1]
+		_check(east.target_room == ROOM_05 and east.target_entry == &"west" and east.collision_layer == 0
+			and east.collision_mask == 4 and east.monitoring and not east.monitorable, "East leva à Sala 05, entrada west (layer 0, mask só player)")
+		_check(_exit_rect(east) == EAST_EXIT and not _body_rect(EAST).grow(4.0).intersects(EAST_EXIT),
+			"área da saída East %s dentro da passagem leste; a entrada east fica fora dela" % _exit_rect(east))
 		var e: RoomExit = exits[0]
 		_check(e.target_room == ROOM_03 and e.target_entry == &"east", "West leva à Sala 03, entrada east (a de cima)")
 		_check(e.collision_layer == 0 and e.collision_mask == 4 and e.monitoring and not e.monitorable,
@@ -215,7 +222,7 @@ func _test_terrain_cells() -> void:
 	for y: int in range(16, 20):
 		passages = passages and not _is_rock(0, y) and not _is_rock(1, y) and _is_rock(-1, y) \
 			and not _is_rock(54, y) and not _is_rock(55, y) and _is_rock(56, y)
-	_check(passages, "passagens de 4 tiles nas duas paredes, fechadas pela moldura fora da câmera (a leste, até a Sala 05)")
+	_check(passages, "passagens de 4 tiles nas duas paredes, fechadas pela moldura fora da câmera")
 	# Pilares: sólidos (camada world) com colisão real em toda a área.
 	var solid: bool = true
 	for r: Rect2i in PILLAR_CELLS:
@@ -475,8 +482,8 @@ func _test_path_east() -> void:
 	stop = await _walk_until_wall()
 	Input.action_release("move_right")
 	_check(absf(stop - (BOUNDS.end.x - TERRA_HALF_WIDTH)) < 0.5 and absf(_terra.global_position.y - FLOOR_Y) < 0.5,
-		"desce a elevação leste e chega ao fim da passagem leste, fechada até a Sala 05 (x %.1f)" % stop)
-	_check(_game.call("get_room") == _room, "sem transição na passagem leste")
+		"desce a elevação leste e chega ao fim da passagem leste (x %.1f)" % stop)
+	_check(_game.call("get_room") == _room, "com a saída desligada, sem transição na passagem leste (a ida à Sala 05 tem teste próprio)")
 
 
 func _test_path_west() -> void:
