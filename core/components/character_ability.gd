@@ -4,6 +4,10 @@ extends Node
 ## (ação "ability"). Cada habilidade concreta fica em entities/characters/<nome>/abilities/
 ## e sobrescreve os métodos abaixo.
 
+## Emitido quando o efeito da habilidade é efetivamente liberado (não no início da preparação;
+## preparação cancelada não emite). Cada habilidade concreta decide o ponto exato.
+signal activated
+
 
 ## Tenta iniciar a habilidade. Retorna se ela começou.
 func try_activate() -> bool:

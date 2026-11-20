@@ -5,6 +5,16 @@
 [ext_resource type="SpriteFrames" path="res://entities/characters/terra/terra_sprite_frames.tres" id="3_frames"]
 [ext_resource type="Resource" path="res://entities/characters/terra/terra_basic_attack.tres" id="4_attack"]
 [ext_resource type="Script" path="res://entities/characters/terra/abilities/seismic_fist.gd" id="5_seismic"]
+[ext_resource type="Script" path="res://core/components/character_sfx.gd" id="6_sfx"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/footstep_01.wav" id="7_step1"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/footstep_02.wav" id="8_step2"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/footstep_03.wav" id="9_step3"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/jump.wav" id="10_jump"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/land.wav" id="11_land"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/attack.wav" id="12_attack"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/seismic_fist.wav" id="13_seismic"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/hurt.wav" id="14_hurt"]
+[ext_resource type="AudioStream" path="res://entities/characters/terra/audio/death.wav" id="15_death"]
 
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_terra_hitbox"]
 size = Vector2(20, 16)
@@ -32,3 +42,20 @@ attack = ExtResource("4_attack")
 
 [node name="SeismicFist" type="Node" parent="."]
 script = ExtResource("5_seismic")
+
+[node name="Sfx" type="Node2D" parent="." node_paths=PackedStringArray("character", "melee_attack", "health", "ability", "footstep_sprite")]
+position = Vector2(0, -23)
+script = ExtResource("6_sfx")
+character = NodePath("..")
+melee_attack = NodePath("../MeleeAttack")
+health = NodePath("../HealthComponent")
+ability = NodePath("../SeismicFist")
+footsteps = Array[AudioStream]([ExtResource("7_step1"), ExtResource("8_step2"), ExtResource("9_step3")])
+jump_sound = ExtResource("10_jump")
+land_sound = ExtResource("11_land")
+attack_sound = ExtResource("12_attack")
+ability_sound = ExtResource("13_seismic")
+hurt_sound = ExtResource("14_hurt")
+death_sound = ExtResource("15_death")
+footstep_sprite = NodePath("../Visuals/AnimatedSprite2D")
+footstep_contact_frames = PackedInt32Array(1)

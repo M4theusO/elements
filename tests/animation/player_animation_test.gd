@@ -107,7 +107,7 @@ func _check_static_configuration() -> void:
 	# [nome, quadros, FPS, loop, arquivo]
 	var expected_animations: Array = [
 		[PlayerCharacter.ANIM_IDLE, 4, 6.0, true, "terra_idle.png"],
-		[PlayerCharacter.ANIM_WALK, 5, 7.5, true, "terra_walk.png"],
+		[PlayerCharacter.ANIM_WALK, 5, 15.0, true, "terra_walk.png"],
 		[PlayerCharacter.ANIM_JUMP, 2, 10.0, false, "terra_jump.png"],
 		[PlayerCharacter.ANIM_FALL, 2, 8.0, true, "terra_fall.png"],
 	]
@@ -155,9 +155,27 @@ func _test_walk_and_stop() -> void:
 		seen[_sprite.frame] = true
 	_check(_animation_log == [PlayerCharacter.ANIM_WALK], "walk iniciada uma única vez (trocas: %s)" % [_animation_log])
 	_check(seen.size() > 1, "walk avança os quadros (%d quadros vistos)" % seen.size())
+	_check(is_equal_approx(_sprite.speed_scale, 1.0), "walk na velocidade máxima: speed_scale 1 (%.2f)" % _sprite.speed_scale)
 	Input.action_release("move_right")
 	await _wait(15)
 	_check(is_zero_approx(_terra.velocity.x) and _sprite.animation == PlayerCharacter.ANIM_IDLE, "solta o direcional e para: idle")
+	_check(is_equal_approx(_sprite.speed_scale, 1.0), "idle volta ao speed_scale 1")
+	# Analógico pela metade: pernas na metade da velocidade.
+	Input.action_press("move_right", 0.5)
+	await _wait(40)
+	var expected_scale: float = absf(_terra.get_real_velocity().x) / _terra.stats.max_speed
+	_check(_sprite.animation == PlayerCharacter.ANIM_WALK and absf(_sprite.speed_scale - 0.5) < 0.02 and absf(_sprite.speed_scale - expected_scale) < 0.001,
+		"analógico 0,5: walk com speed_scale proporcional à velocidade real (%.2f)" % _sprite.speed_scale)
+	Input.action_release("move_right")
+	Input.action_press("jump")
+	await _wait(2)
+	Input.action_release("jump")
+	_check(_sprite.animation == PlayerCharacter.ANIM_JUMP and is_equal_approx(_sprite.speed_scale, 1.0), "jump toca a 1x depois da walk lenta")
+	for i: int in 90:
+		await physics_frame
+		if _terra.is_on_floor():
+			break
+	await _wait(15)
 
 
 func _test_jump_fall_and_landing() -> void:

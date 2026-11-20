@@ -10,6 +10,13 @@ extends CharacterBody2D
 
 ## Emitido uma única vez por morte, quando a animação death termina.
 signal death_finished
+## Emitido no tick em que um pulo é efetivamente executado (inclusive via coyote time ou jump
+## buffer); apertar o botão sem pular não emite.
+signal jumped
+## Emitido na passagem real do ar para o chão. fall_speed = velocidade vertical (px/s, >= 0)
+## no tick do pouso. Não é emitido no primeiro contato com o chão depois do início da cena ou de
+## um reposicionamento (interrupt_actions/revive), nem com a personagem morta.
+signal landed(fall_speed: float)
 
 ## Nomes de animação padronizados para todos os protagonistas (definidos no SpriteFrames de cada um).
 const ANIM_IDLE: StringName = &"idle"
@@ -47,6 +54,10 @@ var _is_dead: bool = false
 var _death_finished_emitted: bool = false
 ## Conta as mortes; o fallback de death_finished só vale para a morte em que foi armado.
 var _death_count: int = 0
+## Detecção de pouso: estado do chão no tick anterior e se já houve um contato com o chão desde
+## o início ou o último reposicionamento (sem ele, o primeiro contato não conta como pouso).
+var _was_on_floor: bool = false
+var _floor_reference: bool = false
 
 @onready var _visuals: Node2D = $Visuals
 @onready var _sprite: AnimatedSprite2D = $Visuals/AnimatedSprite2D
@@ -79,6 +90,7 @@ func _physics_process(delta: float) -> void:
 		_apply_gravity(delta)
 		_apply_horizontal_movement(0.0, delta)
 		move_and_slide()
+		_was_on_floor = is_on_floor()
 		return
 
 	var direction: float = Input.get_axis("move_left", "move_right")
@@ -87,7 +99,10 @@ func _physics_process(delta: float) -> void:
 	_apply_gravity(delta)
 	_handle_jump()
 	_apply_horizontal_movement(direction, delta)
+	# Antes do move_and_slide, que zera a velocidade vertical ao tocar o chão.
+	var fall_speed: float = maxf(velocity.y, 0.0)
 	move_and_slide()
+	_update_landing(fall_speed)
 	_update_facing(direction)
 	# Depois do facing: atacar e virar no mesmo tick golpeia para o novo lado.
 	# Golpe básico e preparação da habilidade não se sobrepõem.
@@ -135,6 +150,9 @@ func interrupt_actions() -> void:
 	_coyote_timer = 0.0
 	_jump_buffer_timer = 0.0
 	_is_jump_rising = false
+	# Reposicionamento (troca de sala, renascimento): o próximo contato com o chão não é pouso.
+	_was_on_floor = false
+	_floor_reference = false
 	if not _is_dead:
 		_play_animation(ANIM_IDLE)
 
@@ -249,6 +267,7 @@ func _handle_jump() -> void:
 		_jump_buffer_timer = 0.0
 		_coyote_timer = 0.0
 		_is_jump_rising = true
+		jumped.emit()
 		# Pulo vindo do buffer com o botão já solto: aplica o corte imediatamente.
 		if not Input.is_action_pressed("jump"):
 			_cut_jump()
@@ -257,6 +276,17 @@ func _handle_jump() -> void:
 
 	if velocity.y >= 0.0:
 		_is_jump_rising = false
+
+
+## Pouso = estava no ar no tick anterior e agora está no chão, desde que já tenha havido um
+## contato com o chão antes (evita o pouso falso no início da cena e após reposicionamentos).
+func _update_landing(fall_speed: float) -> void:
+	var on_floor: bool = is_on_floor()
+	if on_floor and not _was_on_floor and _floor_reference:
+		landed.emit(fall_speed)
+	if on_floor:
+		_floor_reference = true
+	_was_on_floor = on_floor
 
 
 func _cut_jump() -> void:
@@ -304,16 +334,22 @@ func _update_animation() -> void:
 	# Walk usa o deslocamento real do move_and_slide(): empurrar uma parede resulta em idle,
 	# inclusive no tick do pouso, em que velocity.x pode sobrar sem movimento efetivo.
 	var animation_name: StringName
+	var speed_scale: float = 1.0
+	var ground_speed: float = absf(get_real_velocity().x)
 	if not is_on_floor():
 		animation_name = ANIM_JUMP if velocity.y < 0.0 else ANIM_FALL
-	elif absf(get_real_velocity().x) > WALK_SPEED_THRESHOLD:
+	elif ground_speed > WALK_SPEED_THRESHOLD:
 		animation_name = ANIM_WALK
+		# As pernas acompanham o deslocamento: velocidade máxima = FPS do SpriteFrames
+		# (meio analógico = pernas na metade; acelerando, começam devagar).
+		speed_scale = clampf(ground_speed / maxf(stats.max_speed, 1.0), 0.0, 1.0)
 	else:
 		animation_name = ANIM_IDLE
-	_play_animation(animation_name)
+	_play_animation(animation_name, speed_scale)
 
 
-func _play_animation(animation_name: StringName) -> void:
+## speed_scale vale só para a animação pedida; qualquer outra (inclusive a de reserva) toca a 1x.
+func _play_animation(animation_name: StringName, speed_scale: float = 1.0) -> void:
 	var frames: SpriteFrames = _sprite.sprite_frames
 	if frames == null:
 		return
@@ -322,6 +358,8 @@ func _play_animation(animation_name: StringName) -> void:
 		if not frames.has_animation(ANIM_IDLE):
 			return
 		animation_name = ANIM_IDLE
+		speed_scale = 1.0
+	_sprite.speed_scale = speed_scale
 	if _sprite.animation == animation_name:
 		# Já é a animação atual. Só retoma se for em loop e estiver parada;
 		# animações sem loop (ex.: jump) permanecem no último quadro.

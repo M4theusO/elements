@@ -77,6 +77,8 @@ func _release() -> void:
 	_pending_wave.global_position = _wave_start_position()
 	_pending_wave.launch(_direction, wave_speed, wave_range, damage, _character.global_position.x)
 	_pending_wave = null
+	# Liberação efetiva da onda (quadro de impacto da animação ability).
+	activated.emit()
 
 
 func _cancel() -> void:
