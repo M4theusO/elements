@@ -1,27 +1,27 @@
-[gd_scene format=3]
+[gd_scene format=3 uid="uid://dutkvm2j2gemf"]
 
-[ext_resource type="Script" path="res://main/game.gd" id="1_game"]
+[ext_resource type="Script" uid="uid://cgl77tho1p4b5" path="res://main/game.gd" id="1_game"]
 [ext_resource type="PackedScene" path="res://entities/characters/terra/terra.tscn" id="2_terra"]
 [ext_resource type="PackedScene" path="res://ui/hud/player_hud.tscn" id="3_hud"]
 [ext_resource type="PackedScene" path="res://ui/menus/game_over_screen.tscn" id="4_go"]
 
-[node name="Game" type="Node2D"]
+[node name="Game" type="Node2D" unique_id=1466103917]
 script = ExtResource("1_game")
 
-[node name="RoomSlot" type="Node2D" parent="."]
+[node name="RoomSlot" type="Node2D" parent="." unique_id=1305437148]
 
-[node name="Terra" parent="." instance=ExtResource("2_terra")]
+[node name="Terra" parent="." unique_id=2044643141 instance=ExtResource("2_terra")]
 
-[node name="Camera2D" type="Camera2D" parent="Terra"]
+[node name="Camera2D" type="Camera2D" parent="Terra" unique_id=1010563822]
 process_mode = 3
 
-[node name="PlayerHud" parent="." node_paths=PackedStringArray("target") instance=ExtResource("3_hud")]
+[node name="PlayerHud" parent="." unique_id=1701945560 node_paths=PackedStringArray("target") instance=ExtResource("3_hud")]
 target = NodePath("../Terra")
 
-[node name="Fade" type="CanvasLayer" parent="."]
+[node name="Fade" type="CanvasLayer" parent="." unique_id=1413707338]
 layer = 10
 
-[node name="ColorRect" type="ColorRect" parent="Fade"]
+[node name="ColorRect" type="ColorRect" parent="Fade" unique_id=1930407823]
 visible = false
 anchors_preset = 15
 anchor_right = 1.0
@@ -31,4 +31,4 @@ grow_vertical = 2
 mouse_filter = 2
 color = Color(0, 0, 0, 1)
 
-[node name="GameOverScreen" parent="." instance=ExtResource("4_go")]
+[node name="GameOverScreen" parent="." unique_id=997675169 instance=ExtResource("4_go")]

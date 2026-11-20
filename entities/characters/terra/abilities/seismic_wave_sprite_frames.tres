@@ -1,6 +1,6 @@
-[gd_resource type="SpriteFrames" format=3]
+[gd_resource type="SpriteFrames" format=3 uid="uid://v4lxrr2opwol"]
 
-[ext_resource type="Texture2D" path="res://entities/characters/terra/sprites/terra_seismic_wave.png" id="1_wave"]
+[ext_resource type="Texture2D" uid="uid://vw1kj5r874w" path="res://entities/characters/terra/sprites/terra_seismic_wave.png" id="1_wave"]
 
 [sub_resource type="AtlasTexture" id="AtlasTexture_wave_0"]
 atlas = ExtResource("1_wave")
@@ -47,7 +47,7 @@ animations = [{
 "duration": 1.0,
 "texture": SubResource("AtlasTexture_wave_5")
 }],
-"loop": false,
+"loop": 0,
 "name": &"wave",
 "speed": 15.0
 }]
