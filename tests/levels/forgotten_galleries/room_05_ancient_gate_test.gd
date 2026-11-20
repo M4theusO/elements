@@ -1,7 +1,8 @@
 extends SceneTree
 ## Teste automatizado da Sala 05 — Portão Antigo (Galerias Esquecidas, etapa 6): carregamento,
 ## dimensões, estrutura, terreno (peças, moldura, passagem oeste, parede leste fechada), props,
-## o portão (composição provisória de tiles: forma, simetria, fendas fechadas, colisão real),
+## o portão (cena ancient_gate.tscn: sprite 192x256 da paleta, StaticBody2D na layer world com a
+## colisão alinhada à arte — face do pilar e soleira —, filho do Terrain),
 ## impossibilidade de atravessá-lo com a física real, ausência de inimigos e de saídas além da
 ## oeste, câmera (limites, portão inteiro na tela, sem salto na chegada) e fundo, percurso nos
 ## dois sentidos e transições com a Sala 04 (vida, instância, golpe cancelado e o Escavador
@@ -31,28 +32,32 @@ const ROCK_RECTS: Array[Rect2i] = [
 	Rect2i(0, 0, 48, 2), Rect2i(0, 0, 2, 16), Rect2i(46, 0, 2, 23), Rect2i(0, 20, 48, 3),
 	Rect2i(4, 2, 5, 2), Rect2i(9, 19, 2, 1),
 	Rect2i(16, 19, 2, 1), Rect2i(16, 2, 2, 6), Rect2i(28, 19, 2, 1), Rect2i(28, 2, 2, 6),
-	Rect2i(32, 19, 14, 1), Rect2i(34, 8, 2, 11), Rect2i(37, 8, 6, 11), Rect2i(44, 8, 2, 11),
-	Rect2i(32, 6, 14, 2), Rect2i(36, 4, 8, 2),
+	Rect2i(45, 2, 1, 18),
 ]
 const FRAME_EXTRA: Array[Rect2i] = [Rect2i(-2, 14, 2, 8)]
 
-## Portão (células): ombreiras, folha, fendas, verga, coroamento e soleira; eixo entre as
-## colunas 39 e 40 (x 640).
-const GATE_COLUMNS: Vector2i = Vector2i(34, 45)
-const GATE_ROWS: Vector2i = Vector2i(4, 19)
-const SLOT_COLUMNS: Array[int] = [36, 43]
-const SLOT_ROWS: Vector2i = Vector2i(8, 18)
-const GATE_AXIS_X: float = 640.0
+## Portão Antigo: cena, textura e posição da origem (base, centro).
+const GATE_SCENE: String = "res://world/levels/depths/forgotten_galleries/ancient_gate/ancient_gate.tscn"
+const GATE_TEXTURE: String = "res://world/levels/depths/forgotten_galleries/ancient_gate/ancient_gate.png"
+const GATE_POS: Vector2 = Vector2(640, 320)
+const GATE_ART_SIZE: Vector2i = Vector2i(192, 256)
+## Paleta do portão (15 cores da paleta dos props das Profundezas).
+const GATE_PALETTE: Array[String] = ["#130f12", "#2a2628", "#47403d", "#6b625b", "#958a7e", "#221817", "#43261d",
+	"#5a3321", "#8a3a10", "#fb9524", "#ffc85a", "#fff1c2", "#1a1e0c", "#3f4612", "#646a12"]
+## Colisão esperada (mundo): corpo da face do pilar (x 552, coluna 8 da arte) até a parede, e a
+## soleira (12 px, colunas 2–190 da arte).
+const GATE_BODY: Rect2 = Rect2(552, 64, 184, 244)
+const GATE_THRESHOLD: Rect2 = Rect2(546, 308, 188, 12)
 
 ## Geometria em px (pés = global_position).
 const FLOOR_Y: float = 320.0
 const STEP_Y: float = 304.0
 const WEST: Vector2 = Vector2(56, 320)
 const WEST_EXIT: Rect2 = Rect2(0, 256, 32, 64)
-## Portão inteiro (do topo do coroamento ao chão) e a face onde a Terra para.
-const GATE_RECT: Rect2 = Rect2(512, 64, 256, 256)
-const GATE_FACE_X: float = 544.0
-const GATE_STOP: Vector2 = Vector2(536, 304)
+## Portão inteiro (caixa da arte) e a face onde a Terra para (pés sobre a soleira).
+const GATE_RECT: Rect2 = Rect2(544, 64, 192, 256)
+const GATE_FACE_X: float = 552.0
+const GATE_STOP: Vector2 = Vector2(544, 308)
 ## Entrada e área da saída leste da Sala 04.
 const ROOM_04_EAST: Vector2 = Vector2(840, 320)
 const ROOM_04_EAST_EXIT: Rect2 = Rect2(864, 256, 32, 64)
@@ -141,8 +146,9 @@ func _test_structure() -> void:
 	_check(_room.get_node("Enemies").get_child_count() == 0 and _count_type(_game, "Enemy") == 0
 		and _room.get_persistent_enemies().is_empty(), "sem inimigos")
 	_check(_count_type(_room, "PlayerCharacter") == 0 and _count_type(_room, "Camera2D") == 0
-		and _count_type(_room, "StaticBody2D") == 0 and _count_type(_room, "Area2D") == 1,
-		"sem Terra, câmera, corpos fora do tilemap nem áreas além da saída West (nenhum bloqueio invisível)")
+		and _count_type(_room, "StaticBody2D") == 1 and _terrain.get_node_or_null("AncientGate") is StaticBody2D
+		and _count_type(_room, "Area2D") == 1,
+		"sem Terra nem câmera; o único corpo fora do tilemap é o portão (filho do Terrain); nenhuma área além da saída West")
 	var state: SceneState = (load(ROOM_PATH) as PackedScene).get_state()
 	var extra: Array[String] = []
 	for i: int in state.get_node_count():
@@ -195,34 +201,90 @@ func _test_terrain_cells() -> void:
 
 
 func _test_gate_shape() -> void:
-	print("-- Portão (composição provisória de tiles)")
-	var solid: bool = true
-	for c: Vector2i in [Vector2i(34, 8), Vector2i(35, 18), Vector2i(37, 8), Vector2i(42, 18), Vector2i(44, 8), Vector2i(45, 18),
-			Vector2i(32, 6), Vector2i(45, 7), Vector2i(36, 4), Vector2i(43, 5), Vector2i(32, 19), Vector2i(45, 19)]:
-		solid = solid and _is_rock(c.x, c.y)
-	_check(solid, "ombreiras, folha, verga com beiral, coroamento e soleira em rocha")
-	var slots: bool = true
-	for x: int in SLOT_COLUMNS:
-		for y: int in range(SLOT_ROWS.x, SLOT_ROWS.y + 1):
-			slots = slots and not _is_rock(x, y)
-		# Fendas fechadas: verga em cima, soleira embaixo, rocha dos dois lados (inalcançáveis).
-		slots = slots and _is_rock(x, SLOT_ROWS.x - 1) and _is_rock(x, SLOT_ROWS.y + 1) \
-			and _is_rock(x - 1, SLOT_ROWS.x) and _is_rock(x + 1, SLOT_ROWS.y)
-	_check(slots, "duas fendas verticais de 1 tile delimitam a folha (colunas %s), fechadas por todos os lados" % [SLOT_COLUMNS])
-	var symmetric: bool = true
-	for y: int in range(GATE_ROWS.x, GATE_ROWS.y + 1):
-		for x: int in range(GATE_COLUMNS.x, GATE_COLUMNS.y + 1):
-			var mirror: int = int(2.0 * GATE_AXIS_X / TILE) - 1 - x
-			symmetric = symmetric and _is_rock(x, y) == _is_rock(mirror, y)
-	_check(symmetric, "estrutura simétrica em relação ao eixo x %.0f" % GATE_AXIS_X)
-	var leaf_height: float = (SLOT_ROWS.y - SLOT_ROWS.x + 1) * TILE
-	_check(GATE_RECT.size.y >= 5.0 * TERRA_SIZE.y and leaf_height >= 3.0 * TERRA_SIZE.y and GATE_RECT.size.y / BOUNDS.size.y > 0.6,
-		"portão de %.0f px de altura (%.0f%% da sala) e folha de %.0f px, contra %.0f px da Terra" % [
-			GATE_RECT.size.y, 100.0 * GATE_RECT.size.y / BOUNDS.size.y, leaf_height, TERRA_SIZE.y])
-	# Colisão real na face do portão, colada a ela (sem bloqueio afastado).
+	print("-- Portão (cena ancient_gate.tscn)")
+	var gate: StaticBody2D = _terrain.get_node_or_null("AncientGate") as StaticBody2D
+	_check(gate != null and gate.scene_file_path == GATE_SCENE and gate.position == GATE_POS,
+		"AncientGate (instância de ancient_gate.tscn) filho do Terrain, origem (base, centro) em %s" % GATE_POS)
+	if gate == null:
+		return
+	_check(gate.collision_layer == 1 and gate.collision_mask == 0, "StaticBody2D na layer world (1), sem mask")
+	var sprite: Sprite2D = gate.get_node_or_null("Sprite2D") as Sprite2D
+	_check(sprite != null and sprite.texture != null and sprite.texture.resource_path == GATE_TEXTURE
+		and Vector2i(sprite.texture.get_size()) == GATE_ART_SIZE and not sprite.centered and sprite.offset == Vector2(-96, -256)
+		and Rect2(gate.global_position + sprite.offset, sprite.texture.get_size()) == GATE_RECT,
+		"arte de 192x256 ancorada na base, ocupando %s" % GATE_RECT)
+	if sprite == null or sprite.texture == null:
+		return
+	var image: Image = sprite.texture.get_image()
+	var palette: Dictionary = {}
+	for hex: String in GATE_PALETTE:
+		palette[Color(hex).to_html(false)] = true
+	var off_palette: int = 0
+	var partial_alpha: int = 0
+	var amber: int = 0
+	var opaque_mirror: int = 0
+	var opaque_total: int = 0
+	for y: int in image.get_height():
+		for x: int in image.get_width():
+			var c: Color = image.get_pixel(x, y)
+			if c.a > 0.0 and c.a < 1.0:
+				partial_alpha += 1
+			if c.a == 0.0:
+				continue
+			opaque_total += 1
+			if image.get_pixel(image.get_width() - 1 - x, y).a > 0.0:
+				opaque_mirror += 1
+			var html: String = c.to_html(false)
+			if not palette.has(html):
+				off_palette += 1
+			if html in ["fb9524", "ffc85a", "8a3a10", "fff1c2"]:
+				amber += 1
+	_check(off_palette == 0 and partial_alpha == 0, "todos os pixels da arte na paleta de 15 cores, alfa só 0 ou 1")
+	_check(float(opaque_mirror) / float(opaque_total) > 0.97, "silhueta simétrica (%.1f%% dos pixels opacos espelhados)" % (100.0 * opaque_mirror / opaque_total))
+	_check(amber >= 100, "cristais âmbar na própria arte (%d pixels)" % amber)
+	# Colisão: as duas formas, no mundo, iguais às medidas da arte.
+	var shapes: Array[Rect2] = []
+	for child: Node in gate.get_children():
+		if child is CollisionShape2D and (child as CollisionShape2D).shape is RectangleShape2D:
+			var size: Vector2 = ((child as CollisionShape2D).shape as RectangleShape2D).size
+			shapes.append(Rect2(gate.global_position + (child as Node2D).position - size / 2.0, size))
+	_check(shapes.size() == 2 and GATE_BODY in shapes and GATE_THRESHOLD in shapes,
+		"colisão = corpo %s (face do pilar até a parede) + soleira %s %s" % [GATE_BODY, GATE_THRESHOLD, shapes])
+	# A colisão bate com o desenho: na altura do corpo da Terra (linhas 90–216 da arte) a face do
+	# pilar fica nas colunas 8–10; a base do pilar (217–242) se alarga até a coluna 4 (no máximo
+	# 4 px além da colisão, só junto aos pés); a soleira começa na linha 243, nas colunas 2–190.
+	var face_ok: bool = true
+	var base_ok: bool = true
+	for y: int in range(90, 243):
+		var first: int = -1
+		for x: int in image.get_width():
+			if image.get_pixel(x, y).a > 0.0:
+				first = x
+				break
+		if y <= 216:
+			face_ok = face_ok and first >= 8 and first <= 10
+		else:
+			base_ok = base_ok and first >= 4 and first <= 8
+	var sill_ok: bool = true
+	for y: int in range(243, 256):
+		sill_ok = sill_ok and image.get_pixel(2, y).a > 0.0 and image.get_pixel(190, y).a > 0.0 and image.get_pixel(1, y).a == 0.0
+	_check(face_ok and base_ok and sill_ok,
+		"colisão alinhada à arte: face do pilar nas colunas 8–10, base até a coluna 4, soleira nas colunas 2–190")
+	var gate_tiles: Array[Vector2i] = []
+	for y: int in range(2, 20):
+		for x: int in range(32, 45):
+			if _is_rock(x, y):
+				gate_tiles.append(Vector2i(x, y))
+	_check(gate_tiles.is_empty(), "nenhum tile de rocha sob o portão (o provisório saiu) %s" % [gate_tiles.slice(0, 4)])
+	_check(GATE_RECT.size.y >= 5.0 * TERRA_SIZE.y and GATE_RECT.size.y / BOUNDS.size.y > 0.6,
+		"portão de %.0f px de altura (%.0f%% da sala), contra %.0f px da Terra" % [
+			GATE_RECT.size.y, 100.0 * GATE_RECT.size.y / BOUNDS.size.y, TERRA_SIZE.y])
+	# Colisão real na face do portão, colada a ela (sem bloqueio afastado), e na soleira.
 	_check(_rect_hits(Rect2(GATE_FACE_X + 0.5, 140, 14, 150), 1) > 0 and _rect_hits(Rect2(GATE_FACE_X - 15.5, 140, 15, 160), 3) == 0,
 		"colisão sólida (world) começa exatamente na face do portão, x %.0f; nada antes dela" % GATE_FACE_X)
 	_check(_rect_hits(Rect2(GATE_FACE_X + 0.5, 140, 14, 150), 2) == 0, "o portão não é plataforma one-way")
+	_check(_rect_hits(Rect2(546.5, 309, 4, 10), 1) > 0 and _rect_hits(Rect2(539.5, 309, 6, 10), 1) == 0,
+		"soleira sólida a partir de x 546 (12 px de altura)")
 
 
 func _test_props() -> void:
@@ -232,19 +294,21 @@ func _test_props() -> void:
 	var inside_rock: Array[String] = []
 	var crystals: int = 0
 	var vegetation: int = 0
-	var gate_crystals: int = 0
+	var over_gate: Array[String] = []
 	for prop: Node in props:
 		ok = ok and prop is Sprite2D and prop.scene_file_path.begins_with(PROPS_DIR)
 		var is_crystal: bool = prop.scene_file_path.contains("/crystals/")
 		crystals += 1 if is_crystal else 0
 		vegetation += 1 if prop.scene_file_path.contains("/vegetation/") else 0
-		if is_crystal and GATE_RECT.grow(16.0).has_point((prop as Node2D).position):
-			gate_crystals += 1
+		if prop is Sprite2D:
+			var s: Sprite2D = prop as Sprite2D
+			if Rect2(s.position + s.offset, s.texture.get_size()).intersects(GATE_RECT):
+				over_gate.append(String(prop.name))
 		if prop is Sprite2D and _prop_touches_rock(prop as Sprite2D):
 			inside_rock.append(String(prop.name))
-	_check(ok and crystals + vegetation == props.size(), "%d props já commitados (%d cristais, %d de vegetação), nenhum sprite novo" % [props.size(), crystals, vegetation])
+	_check(ok and crystals + vegetation == props.size(), "%d props já commitados (%d cristais, %d de vegetação)" % [props.size(), crystals, vegetation])
 	_check(inside_rock.is_empty(), "nenhum pixel de prop dentro de rocha %s" % [inside_rock])
-	_check(gate_crystals >= 5, "cristais incrustados no portão (%d)" % gate_crystals)
+	_check(over_gate.is_empty(), "nenhum prop sobre a arte do portão (os cristais dele estão no próprio sprite) %s" % [over_gate])
 	var clear: bool = true
 	for prop: Node in props:
 		clear = clear and (prop as Node2D).position.distance_to(WEST) > 96.0
@@ -295,7 +359,9 @@ func _test_gate_blocks() -> void:
 	await _wait(30)
 	await _tap("ability")
 	await _wait(60)
-	_check(absf(_terra.global_position.x - GATE_STOP.x) < 0.5 and _game.call("get_room") == _room and _is_rock(34, 18),
+	var gate_after: Node2D = _terrain.get_node_or_null("AncientGate") as Node2D
+	_check(absf(_terra.global_position.x - GATE_STOP.x) < 0.5 and _game.call("get_room") == _room
+		and gate_after != null and gate_after.position == GATE_POS,
 		"golpe e Punho Sísmico contra o portão não o abrem nem movem a Terra")
 
 
@@ -426,11 +492,17 @@ func _walk_with_hops(dir: float, max_ticks: int) -> Dictionary:
 		elif _terra.is_on_floor() and _terra.is_on_wall():
 			Input.action_press("jump")
 			jumping = 20
-		still = still + 1 if absf(_terra.global_position.x - last_x) < 0.01 and _terra.is_on_floor() else 0
+		# Parada = x sem mudar por 90 ticks (pode estar pulando contra a parede nesse tempo).
+		still = still + 1 if absf(_terra.global_position.x - last_x) < 0.01 else 0
 		last_x = _terra.global_position.x
 		if still > 90:
 			break
 	_release_all()
+	# Lê a posição já pousada (o último pulo contra a parede pode estar no ar).
+	for i: int in 120:
+		if _terra.is_on_floor():
+			break
+		await physics_frame
 	await _wait(5)
 	return {"pos": _terra.global_position, "max_x": max_x}
 
