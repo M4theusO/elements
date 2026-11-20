@@ -6,8 +6,8 @@ extends Node2D
 ## Lembra, só em memória e só nesta sessão, os inimigos persistentes já derrotados de cada sala:
 ## eles não voltam quando a sala é recarregada; os vivos voltam inteiros, no ponto de origem.
 ## Cada derrota guarda o escopo do inimigo (Room.get_enemy_persistence_scope()): uma nova
-## tentativa (start_new_attempt()) esquece as derrotas "attempt" de todas as salas e mantém
-## as "permanent".
+## tentativa (start_new_attempt()) esquece as derrotas "attempt" e mantém as "permanent"; no
+## reinício após a morte, só as da sala onde a Terra morreu (as outras salas continuam como estão).
 ## Morte da Terra: a HUD (PlayerHud, camada 5, abaixo do fade) mostra a vida da Terra persistente;
 ## quando a animação de morte termina (death_finished), a Game pausa o mundo e abre a
 ## GameOverScreen (camada 20, funciona pausada). "Tentar novamente" (retry_requested) reinicia a
@@ -133,13 +133,17 @@ func get_attempt() -> int:
 	return _attempt
 
 
-## Começa uma nova tentativa: esquece as derrotas de escopo attempt de TODAS as salas (os
-## inimigos comuns voltam na próxima vez que cada sala for carregada) e mantém as permanent.
-## Não recarrega a sala atual nem mexe nos inimigos já carregados; quem reinicia a sala é o
-## fluxo de renascimento. Retorna quantas derrotas foram esquecidas.
-func start_new_attempt() -> int:
+## Começa uma nova tentativa: esquece as derrotas de escopo attempt e mantém as permanent.
+## only_room vazio: em TODAS as salas (os inimigos comuns voltam na próxima vez que cada sala
+## for carregada); com um caminho: só nessa sala, e as derrotas das outras continuam (é o que o
+## reinício usa, com a sala da morte). Não recarrega a sala atual nem mexe nos inimigos já
+## carregados; quem reinicia a sala é o fluxo de renascimento. Retorna quantas derrotas foram
+## esquecidas.
+func start_new_attempt(only_room: String = "") -> int:
 	var removed: int = 0
 	for room_path: String in _defeated_enemies.keys():
+		if not only_room.is_empty() and room_path != only_room:
+			continue
 		var defeated: Dictionary = _defeated_enemies[room_path]
 		for enemy_id: StringName in defeated.keys():
 			if defeated[enemy_id] != Room.SCOPE_PERMANENT:
@@ -312,7 +316,8 @@ func _on_retry_requested() -> void:
 ## Sequência do reinício. Ordem:
 ##  1. escurece com o mundo ainda pausado (tween que processa durante a pausa);
 ##  2. com a tela preta: fecha o Game Over, começa a nova tentativa (limpa as derrotas
-##     attempt de todas as salas) e só então recria a sala atual, na entrada de chegada;
+##     attempt só da sala onde a Terra morreu; as das outras salas continuam) e só então recria
+##     essa sala, na entrada de chegada;
 ##  3. revive() (vida cheia, ações canceladas, invulnerabilidade); com o mundo pausado, a
 ##     invulnerabilidade, que conta em _physics_process da Hurtbox, não corre;
 ##  4. clareia com o mundo ainda pausado (nem Terra nem inimigos se movem);
@@ -321,11 +326,14 @@ func _on_retry_requested() -> void:
 ## Se a Game sair da árvore no meio, _exit_tree despausa a árvore e o reinício espera a volta
 ## (tree_entered; _enter_tree pausa de novo). Liberada, a sequência simplesmente termina.
 func _run_retry() -> void:
+	# Sala da morte, fixada no aceite: transições ficam recusadas durante o reinício, e o Game
+	# Over só abre depois que uma transição em andamento termina (ou é cancelada).
+	var death_room: String = _room_path
 	await _fade_to(1.0, true)
 	if not is_inside_tree():
 		await tree_entered
 	_game_over.close()
-	start_new_attempt()
+	start_new_attempt(death_room)
 	var room: Room = _instantiate_room(_room_path, _entrance_id)
 	if room != null:
 		_swap_room(room, _room_path, _entrance_id)

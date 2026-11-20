@@ -18,6 +18,10 @@ const ROOM_03: String = "res://world/levels/depths/forgotten_galleries/room_03_a
 const FRAGMENT_PATH: String = "res://entities/enemies/living_fragment/living_fragment.tscn"
 const FRAGMENT_NODE: String = "Enemies/LivingFragment"
 const FRAGMENT_ID: StringName = &"gallery_fragment_01"
+const ROOM_04: String = "res://world/levels/depths/forgotten_galleries/room_04_crystals.tscn"
+const ROOM_05: String = "res://world/levels/depths/forgotten_galleries/room_05_ancient_gate.tscn"
+const BURROWER_NODE: String = "Enemies/CrystalBurrower"
+const BURROWER_ID: StringName = &"crystal_burrower_01"
 ## Cópia da Sala 02 com mais um Fragmento, de escopo permanent (gravada em user:// e apagada no fim).
 const SCOPE_ROOM: String = "user://death_retry_test_scope_room.tscn"
 const GUARDIAN_ID: StringName = &"retry_guardian"
@@ -42,6 +46,7 @@ func _run() -> void:
 	await _test_retry_flow()
 	await _test_respawn_at_start()
 	await _test_arrival_entrance_and_previous_rooms()
+	await _test_retry_restores_only_death_room()
 	_make_scope_room()
 	await _test_permanent_and_enemy_during_fade()
 	await _test_game_removed()
@@ -298,7 +303,8 @@ func _test_arrival_entrance_and_previous_rooms() -> void:
 		and _game.call("get_respawn_entrance") == &"east", "renasce na entrada east (a da última chegada)")
 	_check(_enemy_count() == 1 and room.get_node_or_null(FRAGMENT_NODE) != null and not _game.call("is_enemy_defeated", ROOM_02, FRAGMENT_ID),
 		"o Fragmento derrotado na sala atual volta (um só)")
-	# Derrota numa sala anterior e morte em outra.
+	# Derrota numa sala anterior e morte em outra (decisão de 2026-11-20, Etapa 7.1: o reinício
+	# restaura só os inimigos da sala da morte; os das outras salas continuam derrotados).
 	_kill_fragment()
 	await _go(ROOM_03, &"west")
 	await _die()
@@ -306,12 +312,112 @@ func _test_arrival_entrance_and_previous_rooms() -> void:
 	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_03 and _game.call("get_attempt") == 3
 		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"west").global_position) < 0.5,
 		"morte na Sala 03: renasce na entrada west da Sala 03 (tentativa 3)")
-	_check((_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty(), "registro da Sala 02 limpo")
+	_check(_game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID], "registro da Sala 02 preservado (morte em outra sala)")
 	await _go(ROOM_02, &"east")
+	_check(_enemy_count() == 0 and (_game.call("get_room") as Room).get_node_or_null(FRAGMENT_NODE) == null,
+		"revisitando a Sala 02: o Fragmento continua derrotado")
+	# Morrendo agora na própria Sala 02, ele volta (um só, vida cheia, uma ligação).
+	await _die()
+	obs = await _confirm_and_watch()
 	var fragment: Enemy = (_game.call("get_room") as Room).get_node_or_null(FRAGMENT_NODE) as Enemy
-	_check(fragment != null and _enemy_count() == 1 and _game_links(fragment) == 1
-		and _health(fragment).current_health == _health(fragment).max_health,
-		"revisitando a Sala 02: o Fragmento comum volta (um só, vida cheia, uma ligação)")
+	_check(obs.restarted == 1 and fragment != null and _enemy_count() == 1 and _game_links(fragment) == 1
+		and _health(fragment).current_health == _health(fragment).max_health
+		and (_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty(),
+		"morte na Sala 02: o Fragmento volta (um só, vida cheia, uma ligação), registro da Sala 02 limpo")
+
+
+## Etapa 7.1 (decisão de 2026-11-20): o reinício restaura só os inimigos derrotados da sala onde
+## a Terra morreu; os das outras salas continuam derrotados.
+func _test_retry_restores_only_death_room() -> void:
+	print("-- Reinício restaura só a sala da morte (Etapa 7.1)")
+	# Exemplo obrigatório: Fragmento (Sala 02) e Escavador (Sala 04) derrotados, morte na Sala 05.
+	await _new_game()
+	await _go(ROOM_02, &"west")
+	_kill_fragment()
+	await _go(ROOM_04, &"west")
+	_kill_by_id(BURROWER_ID)
+	await _go(ROOM_05, &"west")
+	await _die()
+	var obs: Dictionary = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_05
+		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"west").global_position) < 0.5,
+		"morte na Sala 05 (sem inimigos): renasce na Sala 05, entrada west")
+	_check(_game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID] and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID],
+		"registros das Salas 02 e 04 intactos")
+	await _go(ROOM_04, &"east")
+	_check(_enemy_count() == 0 and (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) == null,
+		"de volta à Sala 04: o Escavador continua derrotado")
+	await _go(ROOM_02, &"east")
+	_check(_enemy_count() == 0 and (_game.call("get_room") as Room).get_node_or_null(FRAGMENT_NODE) == null,
+		"de volta à Sala 02: o Fragmento continua derrotado")
+	# Contrapartida: Escavador derrotado e morte na própria Sala 04.
+	await _new_game()
+	await _go(ROOM_02, &"west")
+	_kill_fragment()
+	await _go(ROOM_04, &"west")
+	_kill_by_id(BURROWER_ID)
+	await _die()
+	obs = await _confirm_and_watch()
+	var burrower: Enemy = (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) as Enemy
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_04 and burrower != null and _enemy_count() == 1
+		and _health(burrower).current_health == _health(burrower).max_health and _game_links(burrower) == 1,
+		"morte na Sala 04: o Escavador volta com vida cheia (um só, uma ligação)")
+	_check((_game.call("get_defeated_enemies", ROOM_04) as Array).is_empty() and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID],
+		"registro da Sala 04 limpo; o da Sala 02 preservado")
+	_check(_terra().get_health().current_health == _terra().get_health().max_health and _terra().get_hurtbox().is_invulnerable(),
+		"vida cheia e invulnerabilidade de renascimento depois do reinício")
+	# Sala vertical sem inimigos (Sala 03, pela entrada de cima), com derrotas nas Salas 02 e 04.
+	_kill_by_id(BURROWER_ID)
+	await _go(ROOM_03, &"east")
+	await _die()
+	obs = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_03 and _game.call("get_respawn_entrance") == &"east"
+		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"east").global_position) < 0.5,
+		"morte na Sala 03 (vertical): renasce em cima, na entrada east")
+	# Reinícios repetidos na mesma sala não mexem nas outras.
+	var attempt: int = _game.call("get_attempt")
+	for n: int in 2:
+		await _die()
+		obs = await _confirm_and_watch()
+		_check(obs.restarted == 1, "reinício repetido %d concluído" % (n + 1))
+	_check(_game.call("get_attempt") == attempt + 2 and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID]
+		and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID], "após 3 reinícios na Sala 03, Salas 02 e 04 continuam com as derrotas")
+	# Morte durante a transição, depois da troca: vale para a sala nova (Sala 05).
+	await _go(ROOM_04, &"west")
+	var on_swap: Callable = func(_room: Room) -> void: _terra().get_health().take_damage(_terra().get_health().current_health)
+	_game.connect("room_changed", on_swap, CONNECT_ONE_SHOT)
+	_check(_game.call("request_transition", ROOM_05, &"west"), "transição 04 → 05 pedida")
+	await _wait_game_over()
+	obs = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_05 and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID],
+		"morte depois da troca 04 → 05: reinício na Sala 05; o Escavador continua derrotado")
+	# Morte durante a transição, antes da troca: a transição é cancelada e vale a sala de origem.
+	await _go(ROOM_04, &"east")
+	_check(_game.call("request_transition", ROOM_05, &"west"), "transição 04 → 05 pedida de novo")
+	_terra().get_health().take_damage(_terra().get_health().current_health)
+	await _wait_game_over()
+	_check(_game.call("get_room_path") == ROOM_04, "morte antes da troca: a transição foi cancelada, continua na Sala 04")
+	obs = await _confirm_and_watch()
+	burrower = (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) as Enemy
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_04 and burrower != null
+		and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID],
+		"reinício na Sala 04 (sala de origem): o Escavador volta; o Fragmento da Sala 02 continua derrotado")
+	# Reinício completo do jogo (Game nova): tudo volta.
+	await _new_game()
+	_check((_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty() and (_game.call("get_defeated_enemies", ROOM_04) as Array).is_empty()
+		and _game.call("get_attempt") == 1, "Game nova: registro vazio, tentativa 1")
+	await _go(ROOM_04, &"west")
+	_check((_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) != null, "Game nova: o Escavador está na Sala 04")
+
+
+## Espera death_finished, o Game Over aberto e o botão aceitando entrada.
+func _wait_game_over() -> void:
+	for i: int in MAX_FRAMES:
+		if _screen().is_open():
+			break
+		await process_frame
+	_check(_screen().is_open() and paused, "Game Over aberto e mundo pausado")
+	await _wait_accepting()
 
 
 func _test_permanent_and_enemy_during_fade() -> void:
