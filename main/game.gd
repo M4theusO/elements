@@ -19,7 +19,8 @@ extends Node2D
 ## Checkpoints (Altares Elementais): a Game guarda, só em memória e só por identificadores
 ## (caminho da sala + checkpoint_id), os altares já ativados e o checkpoint de renascimento atual
 ## (um só). Ao carregar uma sala, devolve o estado a cada altar (ElementalAltar.apply_state()).
-## Ativar um altar não começa tentativa nem mexe nos inimigos. O renascimento ainda não usa os
+## Ativar um altar não começa tentativa nem mexe nos inimigos; pela interação (sinal activated
+## do altar), a ativação aceita recupera toda a vida da Terra. O renascimento ainda não usa os
 ## checkpoints (Etapa 8.3).
 
 signal room_changed(room: Room)
@@ -385,11 +386,15 @@ func _apply_checkpoint_states(room: Room, room_path: String) -> void:
 		altars[id].apply_state(is_checkpoint_activated(room_path, id), is_current_checkpoint(room_path, id))
 
 
-## Só o altar da sala carregada conta (um altar de uma sala já substituída é ignorado).
+## Interação com um altar. Só o altar da sala carregada conta (um altar de uma sala já
+## substituída é ignorado). Aceita a ativação (primeira ou repetida), a Terra recupera toda a
+## vida (health_changed atualiza a HUD); recusada, nada muda. activate_checkpoint() sozinho
+## (registro) não mexe na vida.
 func _on_altar_activated(altar: ElementalAltar, _first_time: bool, room_path: String) -> void:
 	if _room == null or altar.get_room() != _room:
 		return
-	activate_checkpoint(room_path, altar.checkpoint_id)
+	if activate_checkpoint(room_path, altar.checkpoint_id):
+		_terra.get_health().restore_full()
 
 
 ## Fim da animação de morte da Terra (emitido uma vez por morte): pausa o mundo e abre a tela.

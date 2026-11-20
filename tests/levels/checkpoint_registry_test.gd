@@ -79,16 +79,17 @@ func _test_altar_scene_and_source() -> void:
 	_check(altar.get_node_or_null(^"Visuals") is Node2D and altar.get_node_or_null(^"SpawnPoint") is Marker2D,
 		"filhos Visuals (Node2D) e SpawnPoint (Marker2D)")
 	_check(altar.get_node(^"Visuals").get_child_count() == 0, "sem sprites nem animações nesta etapa")
-	var areas: int = 0
-	for node: Node in altar.find_children("*", "CollisionObject2D", true, false):
-		areas += 1
-	_check(areas == 0, "sem área de interação nem colisão nesta etapa")
+	# Etapa 8.2: a única colisão é a área de interação (zona de gatilho, não bloqueia ninguém).
+	var bodies: Array[Node] = altar.find_children("*", "CollisionObject2D", true, false)
+	_check(bodies.size() == 1 and bodies[0] is Area2D and bodies[0].name == &"InteractionArea",
+		"uma colisão só: a InteractionArea (Area2D), sem corpos que bloqueiem (%s)" % [bodies])
 	_check(altar.checkpoint_id.is_empty() and not altar.is_activated() and not altar.is_current(),
 		"padrão: sem ID, não ativado, não atual")
 	altar.free()
 	var source: String = (load("res://world/levels/_shared/elemental_altar.gd") as GDScript).source_code
 	var forbidden: Array[String] = []
-	for token: String in ["PlayerCharacter", "Terra", "get_terra", "start_new_attempt", "restore_full",
+	# PlayerCharacter (base genérica dos protagonistas) é permitido desde a 8.2, como no RoomExit.
+	for token: String in ["Terra", "get_terra", "start_new_attempt", "restore_full", "Game",
 			"FileAccess", "ConfigFile", "ResourceSaver", "user://", "get_tree().root"]:
 		if _code_only(source).contains(token):
 			forbidden.append(token)
@@ -302,12 +303,13 @@ func _test_attempt_and_enemies() -> void:
 	fragment_health.take_damage(fragment_health.current_health)
 	var attempt: int = _game.call("get_attempt")
 	_check(_game.call("get_defeated_enemies", ROOM_A) == [FRAGMENT_ID], "Fragmento derrotado e registrado")
-	_room().get_checkpoint(ALTAR_A).activate()
-	_check(_game.call("is_current_checkpoint", ROOM_A, ALTAR_A), "altar ativado")
+	# Registro direto (sem a interação, que recupera a vida desde a 8.2).
+	_check(_game.call("activate_checkpoint", ROOM_A, ALTAR_A) and _game.call("is_current_checkpoint", ROOM_A, ALTAR_A),
+		"altar ativado pelo registro")
 	_check(_game.call("get_attempt") == attempt, "a ativação não começa uma nova tentativa (tentativa %d)" % attempt)
 	_check(_game.call("get_defeated_enemies", ROOM_A) == [FRAGMENT_ID] and _game.call("get_defeated_enemy_scope", ROOM_A, FRAGMENT_ID) == Room.SCOPE_ATTEMPT,
 		"a ativação não restaura inimigos nem mexe no escopo")
-	_check(terra.get_health().current_health == hp, "a ativação não restaura vida nesta etapa (%d)" % hp)
+	_check(terra.get_health().current_health == hp, "activate_checkpoint (só o registro) não restaura vida (%d)" % hp)
 	_room().get_checkpoint(ALTAR_A).activate()
 	_check(_game.call("get_defeated_enemies", ROOM_A) == [FRAGMENT_ID] and _game.call("get_attempt") == attempt,
 		"reutilizar o altar também não restaura inimigos")

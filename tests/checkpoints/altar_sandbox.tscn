@@ -1,0 +1,7 @@
+[gd_scene format=3]
+
+[ext_resource type="PackedScene" path="res://main/game.tscn" id="1_game"]
+
+[node name="AltarSandbox" instance=ExtResource("1_game")]
+start_room = "res://tests/checkpoints/altar_sandbox_room.tscn"
+start_entrance = &"west"
