@@ -11,8 +11,9 @@ extends Node2D
 ## Morte da Terra: a HUD (PlayerHud, camada 5, abaixo do fade) mostra a vida da Terra persistente;
 ## quando a animação de morte termina (death_finished), a Game pausa o mundo e abre a
 ## GameOverScreen (camada 20, funciona pausada). "Tentar novamente" (retry_requested) reinicia a
-## tentativa: escurece com o mundo pausado, começa uma nova tentativa, recria a sala atual, faz a
-## Terra renascer na entrada pela qual chegou a ela e clareia, tudo com o mundo pausado; no fim do
+## tentativa: escurece com o mundo pausado, começa uma nova tentativa (inimigos attempt da sala da
+## morte), carrega a sala de renascimento (a do checkpoint atual, ou start_room), faz a Terra
+## renascer no altar (ou em start_entrance) e clareia, tudo com o mundo pausado; no fim do
 ## clarear, Terra e inimigos voltam juntos (e a invulnerabilidade de renascimento começa a contar).
 ## Transições: a Hurtbox da Terra fica bloqueada do pedido até a volta do controle (ver
 ## request_transition() e _run_transition()).
@@ -20,8 +21,8 @@ extends Node2D
 ## (caminho da sala + checkpoint_id), os altares já ativados e o checkpoint de renascimento atual
 ## (um só). Ao carregar uma sala, devolve o estado a cada altar (ElementalAltar.apply_state()).
 ## Ativar um altar não começa tentativa nem mexe nos inimigos; pela interação (sinal activated
-## do altar), a ativação aceita recupera toda a vida da Terra. O renascimento ainda não usa os
-## checkpoints (Etapa 8.3).
+## do altar), a ativação aceita recupera toda a vida da Terra. O reinício renasce no SpawnPoint
+## do altar atual (ver _run_retry()).
 
 signal room_changed(room: Room)
 ## Reinício concluído: Terra viva, no controle, mundo rodando e tela clara.
@@ -47,7 +48,7 @@ var _defeated_enemies: Dictionary[String, Dictionary] = {}
 var _attempt: int = 1
 ## Verdadeiro enquanto a árvore estiver pausada pela Game (Game Over e começo do reinício).
 var _paused_world: bool = false
-## Entrada pela qual a Terra chegou à sala atual (onde renasce).
+## Entrada pela qual a Terra chegou à sala atual (&"" depois de renascer num altar).
 var _entrance_id: StringName = &""
 ## Verdadeiro do "Tentar novamente" aceito até o fim do reinício.
 var _retrying: bool = false
@@ -99,9 +100,22 @@ func is_retrying() -> bool:
 	return _retrying
 
 
-## Entrada da sala atual onde a Terra renasce: a da chegada (start na sala inicial).
-func get_respawn_entrance() -> StringName:
+## Entrada pela qual a Terra chegou à sala atual (start_entrance no início; &"" depois de
+## renascer num altar).
+func get_arrival_entrance() -> StringName:
 	return _entrance_id
+
+
+## Sala prevista para o próximo renascimento: a do checkpoint atual, ou start_room sem checkpoint.
+## (Um checkpoint que se mostrar inválido no reinício cai para start_room; ver _run_retry().)
+func get_respawn_room() -> String:
+	return _checkpoint_room if has_current_checkpoint() else start_room
+
+
+## Entrada prevista para o próximo renascimento: start_entrance sem checkpoint; &"" com
+## checkpoint (a Terra renasce no SpawnPoint do altar).
+func get_respawn_entrance() -> StringName:
+	return &"" if has_current_checkpoint() else start_entrance
 
 
 func get_room() -> Room:
@@ -300,8 +314,22 @@ func _end_transition(swapped: bool) -> void:
 	transition_finished.emit(swapped)
 
 
-## Carrega e confere a sala sem tocar na atual. Retorna null (com erro no console) se falhar.
+## Carrega e confere a sala (e a entrada) sem tocar na atual. Retorna null (com erro no console)
+## se falhar.
 func _instantiate_room(room_path: String, entrance_id: StringName) -> Room:
+	var room: Room = _load_room(room_path)
+	if room == null:
+		return null
+	if not room.has_entrance(entrance_id):
+		push_error("Game: a sala '%s' não tem a entrada '%s'." % [room_path, entrance_id])
+		room.free()
+		return null
+	return room
+
+
+## Instancia a sala sem tocar na atual: o caminho precisa existir e a cena ser uma Room.
+## Retorna null (com erro no console) se falhar.
+func _load_room(room_path: String) -> Room:
 	if room_path.is_empty() or not ResourceLoader.exists(room_path):
 		push_error("Game: sala '%s' não encontrada." % room_path)
 		return null
@@ -313,14 +341,14 @@ func _instantiate_room(room_path: String, entrance_id: StringName) -> Room:
 		if node != null:
 			node.free()
 		return null
-	if not room.has_entrance(entrance_id):
-		push_error("Game: a sala '%s' não tem a entrada '%s'." % [room_path, entrance_id])
-		room.free()
-		return null
 	return room
 
 
-func _swap_room(room: Room, room_path: String, entrance_id: StringName) -> void:
+## Troca a sala atual pela já instanciada e validada. checkpoint_id vazio (transições, início):
+## a Terra vai para a entrada entrance_id. Com checkpoint_id (reinício num altar): vai para o
+## SpawnPoint do altar, lido só depois de a sala entrar na árvore (posição global correta); o
+## altar não fica guardado, e a entrada de chegada passa a ser &"".
+func _swap_room(room: Room, room_path: String, entrance_id: StringName, checkpoint_id: StringName = &"") -> void:
 	if _room != null:
 		_room_slot.remove_child(_room)
 		_room.queue_free()
@@ -332,16 +360,25 @@ func _swap_room(room: Room, room_path: String, entrance_id: StringName) -> void:
 	_room_slot.add_child(room)
 	for room_exit: RoomExit in room.get_exits():
 		room_exit.transition_requested.connect(request_transition)
-	_place_terra(room, entrance_id)
+	if checkpoint_id.is_empty():
+		_place_terra(room, entrance_id)
+	else:
+		var altar: ElementalAltar = room.get_checkpoint(checkpoint_id)
+		_place_terra_at(altar.get_spawn_position(), altar.get_spawn_facing(), room.get_camera_bounds())
 	room_changed.emit(room)
 
 
 ## Terra parada na entrada, olhando para dentro da sala, e câmera nos limites da sala.
 func _place_terra(room: Room, entrance_id: StringName) -> void:
-	_terra.global_position = room.get_entrance(entrance_id).global_position
+	_place_terra_at(room.get_entrance(entrance_id).global_position, room.get_entrance_facing(entrance_id),
+		room.get_camera_bounds())
+
+
+func _place_terra_at(feet: Vector2, facing: float, camera_bounds: Rect2i) -> void:
+	_terra.global_position = feet
 	_terra.velocity = Vector2.ZERO
-	_terra.set_facing(room.get_entrance_facing(entrance_id))
-	_apply_camera_bounds(room.get_camera_bounds())
+	_terra.set_facing(facing)
+	_apply_camera_bounds(camera_bounds)
 
 
 ## Antes de a sala entrar na árvore: libera os inimigos já derrotados (nem chegam ao _ready) e
@@ -424,8 +461,12 @@ func _on_retry_requested() -> void:
 ## Sequência do reinício. Ordem:
 ##  1. escurece com o mundo ainda pausado (tween que processa durante a pausa);
 ##  2. com a tela preta: fecha o Game Over, começa a nova tentativa (limpa as derrotas
-##     attempt só da sala onde a Terra morreu; as das outras salas continuam) e só então recria
-##     essa sala, na entrada de chegada;
+##     attempt só da sala onde a Terra morreu; as das outras salas e as permanent continuam;
+##     os checkpoints não mudam) e só então carrega a sala de renascimento, independente da sala
+##     da morte, nesta ordem (sem recursão; ver _place_for_respawn()):
+##       a. checkpoint atual válido: sala do altar, Terra no SpawnPoint, olhando para spawn_facing;
+##       b. start_room / start_entrance;
+##       c. último recurso: a sala da morte, na entrada de chegada;
 ##  3. revive() (vida cheia, ações canceladas, invulnerabilidade); com o mundo pausado, a
 ##     invulnerabilidade, que conta em _physics_process da Hurtbox, não corre;
 ##  4. clareia com o mundo ainda pausado (nem Terra nem inimigos se movem);
@@ -437,18 +478,13 @@ func _run_retry() -> void:
 	# Sala da morte, fixada no aceite: transições ficam recusadas durante o reinício, e o Game
 	# Over só abre depois que uma transição em andamento termina (ou é cancelada).
 	var death_room: String = _room_path
+	var death_arrival: StringName = _entrance_id
 	await _fade_to(1.0, true)
 	if not is_inside_tree():
 		await tree_entered
 	_game_over.close()
 	start_new_attempt(death_room)
-	var room: Room = _instantiate_room(_room_path, _entrance_id)
-	if room != null:
-		_swap_room(room, _room_path, _entrance_id)
-	else:
-		# Não deveria acontecer (a sala já foi carregada antes): renasce na sala atual mesmo.
-		push_error("Game: não foi possível recriar a sala '%s'; renascendo sem recriá-la." % _room_path)
-		_place_terra(_room, _entrance_id)
+	_place_for_respawn(death_room, death_arrival)
 	_terra.revive()
 	await _fade_to(0.0, true)
 	if not is_inside_tree():
@@ -457,6 +493,63 @@ func _run_retry() -> void:
 	get_tree().paused = false
 	_retrying = false
 	attempt_restarted.emit(_attempt)
+
+
+## Carrega a sala de renascimento e põe a Terra nela (uma troca só). Cada alternativa é validada
+## antes de mexer na sala atual; falhou, passa à seguinte (sequência fixa, sem recursão nem
+## novas tentativas). Nenhuma delas mexe no registro de inimigos.
+func _place_for_respawn(death_room: String, death_arrival: StringName) -> void:
+	if _respawn_at_checkpoint():
+		return
+	if _respawn_at_entrance(start_room, start_entrance):
+		return
+	push_error("Game: sala inicial '%s' (entrada '%s') inválida; renascendo na sala da morte." % [start_room, start_entrance])
+	if _respawn_at_entrance(death_room, death_arrival):
+		return
+	# Nenhuma sala pôde ser carregada: fica na sala atual (que continua válida, porque nada foi
+	# trocado), na entrada de chegada se ela existir. O reinício termina normalmente (revive,
+	# clarear, despausar), sem tela preta permanente.
+	push_error("Game: nenhum destino de renascimento válido (checkpoint, sala inicial, sala da morte '%s'); renascendo onde a Terra está." % death_room)
+	_terra.velocity = Vector2.ZERO
+	if _room != null and _room.has_entrance(_entrance_id):
+		_place_terra(_room, _entrance_id)
+
+
+## Checkpoint atual, se houver e for válido: caminho existente, cena Room, altar válido com esse
+## checkpoint_id (Room.has_checkpoint(): exclui ausente, vazio e repetido) e com SpawnPoint.
+## Inválido: erro no console, a sala instanciada é liberada e só a seleção atual é limpa (o
+## histórico dos altares ativados continua). Retorna se a Terra foi posta no altar.
+func _respawn_at_checkpoint() -> bool:
+	if not has_current_checkpoint():
+		return false
+	var room_path: String = _checkpoint_room
+	var checkpoint_id: StringName = _checkpoint_id
+	var room: Room = _load_room(room_path)
+	var problem: String = ""
+	if room == null:
+		problem = "sala inválida"
+	elif not room.has_checkpoint(checkpoint_id):
+		problem = "altar inexistente ou inválido na sala"
+	elif not room.get_checkpoint(checkpoint_id).has_spawn_point():
+		problem = "altar sem SpawnPoint"
+	if not problem.is_empty():
+		push_error("Game: checkpoint '%s' em '%s' descartado (%s); renascendo na sala inicial." % [checkpoint_id, room_path, problem])
+		if room != null:
+			room.free()
+		_checkpoint_room = ""
+		_checkpoint_id = &""
+		return false
+	_swap_room(room, room_path, &"", checkpoint_id)
+	return true
+
+
+## Sala e entrada, se válidas (_instantiate_room). Retorna se a Terra foi posta na entrada.
+func _respawn_at_entrance(room_path: String, entrance_id: StringName) -> bool:
+	var room: Room = _instantiate_room(room_path, entrance_id)
+	if room == null:
+		return false
+	_swap_room(room, room_path, entrance_id)
+	return true
 
 
 ## A pausa é da Game: se ela sair da árvore com o mundo pausado por ela (ex.: troca de cena ou

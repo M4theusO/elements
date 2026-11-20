@@ -103,6 +103,11 @@ func apply_state(activated_state: bool, current_state: bool) -> void:
 	state_changed.emit(_activated, _current)
 
 
+## Verdadeiro se o altar tiver o filho SpawnPoint (Marker2D) que marca o renascimento.
+func has_spawn_point() -> bool:
+	return get_node_or_null(^"SpawnPoint") is Marker2D
+
+
 ## Posição global dos pés da Terra ao renascer (SpawnPoint; sem ele, a do próprio altar).
 ## Com a sala dentro da árvore.
 func get_spawn_position() -> Vector2:

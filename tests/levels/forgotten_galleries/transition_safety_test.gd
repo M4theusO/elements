@@ -175,7 +175,7 @@ func _test_fatal_hit_then_request() -> void:
 	_check(terra.is_dead(), "Terra morta pelo golpe")
 	_check(not _game.call("request_transition", ROOM_02, &"west") and not _game.call("is_transitioning")
 		and not terra.get_hurtbox().is_blocked(), "pedido logo depois recusado; nada bloqueado nem em transição")
-	await _game_over_and_retry(ROOM_01, &"start")
+	await _game_over_and_retry(ROOM_01)
 
 
 func _test_death_before_swap_at_start() -> void:
@@ -197,13 +197,13 @@ func _test_death_before_swap_at_start() -> void:
 	await _wait_transition_end(finished)
 	_check(finished == [false] and swaps[0] == 0, "transição cancelada (transition_finished(false)), sem troca")
 	_check(_game.call("get_room") == origin and _game.call("get_room_path") == ROOM_02
-		and _game.call("get_respawn_entrance") == &"west", "a Sala 02 continua a atual, entrada west")
+		and _game.call("get_arrival_entrance") == &"west", "a Sala 02 continua a atual, entrada de chegada west")
 	_check(not _game.call("is_transitioning") and not terra.get_hurtbox().is_blocked()
 		and terra.process_mode == Node.PROCESS_MODE_INHERIT, "nada preso: sem transição, sem bloqueio, Terra processando")
 	_check(_game.get_node("RoomSlot").get_child_count() == 1, "só uma sala no RoomSlot")
 	_game.disconnect("transition_finished", on_finished)
 	_game.disconnect("room_changed", on_swap)
-	await _game_over_and_retry(ROOM_02, &"west")
+	await _game_over_and_retry(ROOM_02)
 
 
 func _test_death_during_fade_out() -> void:
@@ -232,7 +232,7 @@ func _test_death_during_fade_out() -> void:
 		and terra.process_mode == Node.PROCESS_MODE_INHERIT, "nada preso depois do cancelamento")
 	_check(_game.get_node("RoomSlot").get_child_count() == 1, "só uma sala no RoomSlot (destino liberado)")
 	_game.disconnect("transition_finished", on_finished)
-	await _game_over_and_retry(ROOM_02, &"west")
+	await _game_over_and_retry(ROOM_02)
 
 
 func _test_death_after_swap() -> void:
@@ -254,8 +254,8 @@ func _test_death_after_swap() -> void:
 		"Terra morta na troca; transição concluída para a Sala 02, uma única troca")
 	_check(not _game.call("is_transitioning") and not terra.get_hurtbox().is_blocked(), "nada preso depois da transição")
 	_check(not _game.call("request_transition", ROOM_01, &"east"), "nenhuma nova transição com a Terra morta")
-	await _game_over_and_retry(ROOM_02, &"west")
-	_check(swaps[0] == 2, "só a recriação do reinício trocou de sala depois (sem troca involuntária) (%d)" % swaps[0])
+	await _game_over_and_retry(ROOM_02)
+	_check(swaps[0] == 2, "só a troca do reinício (para a Sala 01) aconteceu depois (sem troca involuntária) (%d)" % swaps[0])
 	_game.disconnect("transition_finished", on_finished)
 	_game.disconnect("room_changed", on_swap)
 
@@ -290,7 +290,7 @@ func _test_death_finished_during_transition() -> void:
 		"logo depois: Game Over aberto e mundo pausado, sem transição presa")
 	_game.disconnect("transition_finished", on_finished)
 	await _wait_accepting()
-	await _retry_and_check(ROOM_02, &"west")
+	await _retry_and_check(ROOM_01, &"start")
 
 
 func _test_game_removed_during_transition() -> void:
@@ -430,13 +430,14 @@ func _wait_accepting() -> void:
 		await process_frame
 
 
-## Espera o Game Over na sala esperada e confirma o retry, conferindo sala e entrada.
-func _game_over_and_retry(room_path: String, entrance: StringName) -> void:
+## Espera o Game Over na sala da morte e confirma o retry. Sem checkpoint, a Terra renasce na
+## sala e entrada iniciais (Etapa 8.3), qualquer que seja a sala da morte.
+func _game_over_and_retry(room_path: String) -> void:
 	await _wait_game_over()
 	_check(_game.call("is_game_over") and paused and _game.call("get_room_path") == room_path,
 		"Game Over aberto na %s, mundo pausado" % room_path.get_file())
 	await _wait_accepting()
-	await _retry_and_check(room_path, entrance)
+	await _retry_and_check(ROOM_01, &"start")
 
 
 func _retry_and_check(room_path: String, entrance: StringName) -> void:
@@ -453,7 +454,7 @@ func _retry_and_check(room_path: String, entrance: StringName) -> void:
 		await process_frame
 	_game.disconnect("attempt_restarted", on_restarted)
 	var room: Room = _game.call("get_room") as Room
-	_check(restarted[0] == 1 and _game.call("get_room_path") == room_path and _game.call("get_respawn_entrance") == entrance
+	_check(restarted[0] == 1 and _game.call("get_room_path") == room_path and _game.call("get_arrival_entrance") == entrance
 		and at[0].distance_to(room.get_entrance(entrance).global_position) < 0.5 and _terra().get_health().current_health == 5,
 		"renasce na %s, entrada %s, com 5 de vida" % [room_path.get_file(), entrance])
 	_check(not paused and not _game.call("is_transitioning") and not _terra().get_hurtbox().is_blocked(), "depois do reinício: nada pausado, preso ou bloqueado")

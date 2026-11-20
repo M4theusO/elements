@@ -8,6 +8,11 @@ extends SceneTree
 ## Esperas por sinais reais (death_finished, room_changed, retry_requested), com limite de
 ## quadros só como proteção contra travamento, e não por tempos fixos em ticks de física.
 ##
+## Etapa 8.3: sem checkpoint, o reinício renasce em start_room / start_entrance (não mais na sala
+## da morte). Os casos que precisam de inimigos na sala de renascimento configuram start_room;
+## os da Etapa 7.1 vão até a sala da morte para conferir os inimigos. Os checkpoints em si estão
+## em tests/levels/checkpoint_respawn_test.gd.
+##
 ## Execução (na raiz do projeto), sai com código 0 se tudo passar e 1 se algo falhar:
 ##   godot --headless --path . -s res://tests/levels/forgotten_galleries/game_death_retry_test.gd
 
@@ -93,8 +98,9 @@ func _test_structure() -> void:
 		if (c.callable as Callable).get_object() == _game:
 			retry_links += 1
 	_check(retry_links == 1, "uma única ligação da Game com retry_requested (%d)" % retry_links)
-	_check(_game.call("get_attempt") == 1 and not _game.call("is_retrying") and _game.call("get_respawn_entrance") == &"start",
-		"tentativa 1, sem reinício, entrada de renascimento start")
+	_check(_game.call("get_attempt") == 1 and not _game.call("is_retrying") and _game.call("get_respawn_entrance") == &"start"
+		and _game.call("get_respawn_room") == ROOM_01 and _game.call("get_arrival_entrance") == &"start",
+		"tentativa 1, sem reinício; renascimento previsto na Sala 01, entrada start; chegada start")
 
 
 func _test_damage_and_transitions() -> void:
@@ -203,13 +209,19 @@ func _test_death_and_game_over() -> void:
 
 
 ## Continua do caso anterior: Terra morta na Sala 02 (chegou por west), Fragmento vivo.
+## Para observar inimigos na sala de renascimento, a configuração inicial passa a ser a Sala 02,
+## entrada west (sala da morte = sala de renascimento; o caso com salas diferentes está em
+## _test_arrival_entrance_and_previous_rooms e no checkpoint_respawn_test).
 func _test_retry_flow() -> void:
 	print("-- Tentar novamente: sequência do reinício")
 	var terra: PlayerCharacter = _terra()
 	var go: GameOverScreen = _screen()
 	var old_room: Room = _game.call("get_room") as Room
 	var old_fragment: Node = old_room.get_node_or_null(FRAGMENT_NODE)
-	_check(_game.call("get_respawn_entrance") == &"west", "entrada de renascimento: west (chegada à Sala 02)")
+	_game.set("start_room", ROOM_02)
+	_game.set("start_entrance", &"west")
+	_check(_game.call("get_respawn_room") == ROOM_02 and _game.call("get_respawn_entrance") == &"west",
+		"renascimento previsto: start_room configurada (Sala 02, entrada west)")
 	var retries: Array[int] = [0]
 	go.retry_requested.connect(func() -> void: retries[0] += 1)
 	var obs: Dictionary = await _confirm_and_watch(true)
@@ -257,7 +269,7 @@ func _test_retry_flow() -> void:
 	await _check_invulnerability_window(terra, obs)
 	# Transições depois de renascer.
 	await _go(ROOM_01, &"east")
-	_check(_game.call("get_room_path") == ROOM_01 and _game.call("get_respawn_entrance") == &"east", "transição após renascer: Sala 01, entrada east")
+	_check(_game.call("get_room_path") == ROOM_01 and _game.call("get_arrival_entrance") == &"east", "transição após renascer: Sala 01, entrada east")
 	await _go(ROOM_02, &"west")
 	_check(_game.call("get_room_path") == ROOM_02 and _enemy_count() == 1, "volta à Sala 02 com um Fragmento")
 	await process_frame
@@ -267,7 +279,7 @@ func _test_retry_flow() -> void:
 func _test_respawn_at_start() -> void:
 	print("-- Renascimento na sala inicial (entrada start)")
 	await _new_game()
-	_check(_game.call("get_room_path") == ROOM_01 and _game.call("get_respawn_entrance") == &"start", "sala inicial, entrada start")
+	_check(_game.call("get_room_path") == ROOM_01 and _game.call("get_arrival_entrance") == &"start", "sala inicial, entrada start")
 	var terra: PlayerCharacter = _terra()
 	var start: Vector2 = (_game.call("get_room") as Room).get_entrance(&"start").global_position
 	# Morre longe da entrada (andando, não teleportada).
@@ -283,47 +295,55 @@ func _test_respawn_at_start() -> void:
 		"renasce na entrada start (não onde morreu), com 5 de vida")
 
 
+## Etapa 8.3: sem checkpoint, renasce sempre na Sala 01 (entrada start), qualquer que seja a
+## sala da morte; a entrada de chegada (get_arrival_entrance) não decide mais o renascimento.
 func _test_arrival_entrance_and_previous_rooms() -> void:
-	print("-- Entrada de chegada e inimigos de salas anteriores")
+	print("-- Entrada de chegada, renascimento na Sala 01 e inimigos de salas anteriores")
 	await _new_game()
+	var start: Vector2 = (_game.call("get_room") as Room).get_entrance(&"start").global_position
 	await _go(ROOM_02, &"west")
 	_kill_fragment()
 	_check(_game.call("is_enemy_defeated", ROOM_02, FRAGMENT_ID), "Fragmento da Sala 02 derrotado")
 	await _go(ROOM_03, &"west")
-	_check(_game.call("get_respawn_entrance") == &"west", "Sala 03 pela entrada west")
+	_check(_game.call("get_arrival_entrance") == &"west", "Sala 03 pela entrada west")
 	await _go(ROOM_02, &"east")
-	_check(_game.call("get_room_path") == ROOM_02 and _game.call("get_respawn_entrance") == &"east" and _enemy_count() == 0,
+	_check(_game.call("get_room_path") == ROOM_02 and _game.call("get_arrival_entrance") == &"east" and _enemy_count() == 0,
 		"de volta à Sala 02 pela outra porta: entrada east; Fragmento continua derrotado (mesma tentativa)")
+	_check(_game.call("get_respawn_room") == ROOM_01 and _game.call("get_respawn_entrance") == &"start",
+		"renascimento previsto: Sala 01, entrada start (não a sala atual)")
 	# Morte logo depois de entrar na sala.
 	await _die()
 	var obs: Dictionary = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01 and obs.end_position.distance_to(start) < 0.5
+		and _game.call("get_arrival_entrance") == &"start", "morte na Sala 02: renasce na Sala 01, entrada start")
+	_check(not _game.call("is_enemy_defeated", ROOM_02, FRAGMENT_ID), "registro da Sala 02 (sala da morte) limpo")
+	await _go(ROOM_02, &"west")
 	var room: Room = _game.call("get_room") as Room
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_02, "morte logo após entrar: reinício na Sala 02")
-	_check(obs.end_position.distance_to(room.get_entrance(&"east").global_position) < 0.5
-		and _game.call("get_respawn_entrance") == &"east", "renasce na entrada east (a da última chegada)")
-	_check(_enemy_count() == 1 and room.get_node_or_null(FRAGMENT_NODE) != null and not _game.call("is_enemy_defeated", ROOM_02, FRAGMENT_ID),
-		"o Fragmento derrotado na sala atual volta (um só)")
+	_check(_enemy_count() == 1 and room.get_node_or_null(FRAGMENT_NODE) != null,
+		"de volta à Sala 02: o Fragmento derrotado na sala da morte voltou (um só)")
 	# Derrota numa sala anterior e morte em outra (decisão de 2026-11-20, Etapa 7.1: o reinício
 	# restaura só os inimigos da sala da morte; os das outras salas continuam derrotados).
 	_kill_fragment()
 	await _go(ROOM_03, &"west")
 	await _die()
 	obs = await _confirm_and_watch()
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_03 and _game.call("get_attempt") == 3
-		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"west").global_position) < 0.5,
-		"morte na Sala 03: renasce na entrada west da Sala 03 (tentativa 3)")
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01 and _game.call("get_attempt") == 3
+		and obs.end_position.distance_to(start) < 0.5,
+		"morte na Sala 03: renasce na Sala 01, entrada start (tentativa 3)")
 	_check(_game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID], "registro da Sala 02 preservado (morte em outra sala)")
-	await _go(ROOM_02, &"east")
+	await _go(ROOM_02, &"west")
 	_check(_enemy_count() == 0 and (_game.call("get_room") as Room).get_node_or_null(FRAGMENT_NODE) == null,
 		"revisitando a Sala 02: o Fragmento continua derrotado")
 	# Morrendo agora na própria Sala 02, ele volta (um só, vida cheia, uma ligação).
 	await _die()
 	obs = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01 and (_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty(),
+		"morte na Sala 02: renasce na Sala 01; registro da Sala 02 limpo")
+	await _go(ROOM_02, &"west")
 	var fragment: Enemy = (_game.call("get_room") as Room).get_node_or_null(FRAGMENT_NODE) as Enemy
-	_check(obs.restarted == 1 and fragment != null and _enemy_count() == 1 and _game_links(fragment) == 1
-		and _health(fragment).current_health == _health(fragment).max_health
-		and (_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty(),
-		"morte na Sala 02: o Fragmento volta (um só, vida cheia, uma ligação), registro da Sala 02 limpo")
+	_check(fragment != null and _enemy_count() == 1 and _game_links(fragment) == 1
+		and _health(fragment).current_health == _health(fragment).max_health,
+		"de volta à Sala 02: o Fragmento voltou (um só, vida cheia, uma ligação)")
 
 
 ## Etapa 7.1 (decisão de 2026-11-20): o reinício restaura só os inimigos derrotados da sala onde
@@ -339,9 +359,9 @@ func _test_retry_restores_only_death_room() -> void:
 	await _go(ROOM_05, &"west")
 	await _die()
 	var obs: Dictionary = await _confirm_and_watch()
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_05
-		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"west").global_position) < 0.5,
-		"morte na Sala 05 (sem inimigos): renasce na Sala 05, entrada west")
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01
+		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"start").global_position) < 0.5,
+		"morte na Sala 05 (sem inimigos): renasce na Sala 01, entrada start (Etapa 8.3, sem checkpoint)")
 	_check(_game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID] and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID],
 		"registros das Salas 02 e 04 intactos")
 	await _go(ROOM_04, &"east")
@@ -358,30 +378,32 @@ func _test_retry_restores_only_death_room() -> void:
 	_kill_by_id(BURROWER_ID)
 	await _die()
 	obs = await _confirm_and_watch()
-	var burrower: Enemy = (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) as Enemy
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_04 and burrower != null and _enemy_count() == 1
-		and _health(burrower).current_health == _health(burrower).max_health and _game_links(burrower) == 1,
-		"morte na Sala 04: o Escavador volta com vida cheia (um só, uma ligação)")
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01, "morte na Sala 04: renasce na Sala 01")
 	_check((_game.call("get_defeated_enemies", ROOM_04) as Array).is_empty() and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID],
 		"registro da Sala 04 limpo; o da Sala 02 preservado")
 	_check(_terra().get_health().current_health == _terra().get_health().max_health and _terra().get_hurtbox().is_invulnerable(),
 		"vida cheia e invulnerabilidade de renascimento depois do reinício")
+	await _go(ROOM_04, &"west")
+	var burrower: Enemy = (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) as Enemy
+	_check(burrower != null and _enemy_count() == 1
+		and _health(burrower).current_health == _health(burrower).max_health and _game_links(burrower) == 1,
+		"de volta à Sala 04: o Escavador voltou com vida cheia (um só, uma ligação)")
 	# Sala vertical sem inimigos (Sala 03, pela entrada de cima), com derrotas nas Salas 02 e 04.
 	_kill_by_id(BURROWER_ID)
 	await _go(ROOM_03, &"east")
 	await _die()
 	obs = await _confirm_and_watch()
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_03 and _game.call("get_respawn_entrance") == &"east"
-		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"east").global_position) < 0.5,
-		"morte na Sala 03 (vertical): renasce em cima, na entrada east")
-	# Reinícios repetidos na mesma sala não mexem nas outras.
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01
+		and obs.end_position.distance_to((_game.call("get_room") as Room).get_entrance(&"start").global_position) < 0.5,
+		"morte na Sala 03 (vertical, chegada por cima): renasce na Sala 01, entrada start")
+	# Reinícios repetidos (agora na Sala 01, onde renasce) não mexem nas outras salas.
 	var attempt: int = _game.call("get_attempt")
 	for n: int in 2:
 		await _die()
 		obs = await _confirm_and_watch()
-		_check(obs.restarted == 1, "reinício repetido %d concluído" % (n + 1))
+		_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01, "reinício repetido %d concluído (Sala 01)" % (n + 1))
 	_check(_game.call("get_attempt") == attempt + 2 and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID]
-		and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID], "após 3 reinícios na Sala 03, Salas 02 e 04 continuam com as derrotas")
+		and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID], "após 3 reinícios, Salas 02 e 04 continuam com as derrotas")
 	# Morte durante a transição, depois da troca: vale para a sala nova (Sala 05).
 	await _go(ROOM_04, &"west")
 	var on_swap: Callable = func(_room: Room) -> void: _terra().get_health().take_damage(_terra().get_health().current_health)
@@ -389,8 +411,8 @@ func _test_retry_restores_only_death_room() -> void:
 	_check(_game.call("request_transition", ROOM_05, &"west"), "transição 04 → 05 pedida")
 	await _wait_game_over()
 	obs = await _confirm_and_watch()
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_05 and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID],
-		"morte depois da troca 04 → 05: reinício na Sala 05; o Escavador continua derrotado")
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01 and _game.call("get_defeated_enemies", ROOM_04) == [BURROWER_ID],
+		"morte depois da troca 04 → 05 (vale a Sala 05): renasce na Sala 01; o Escavador continua derrotado")
 	# Morte durante a transição, antes da troca: a transição é cancelada e vale a sala de origem.
 	await _go(ROOM_04, &"east")
 	_check(_game.call("request_transition", ROOM_05, &"west"), "transição 04 → 05 pedida de novo")
@@ -398,10 +420,12 @@ func _test_retry_restores_only_death_room() -> void:
 	await _wait_game_over()
 	_check(_game.call("get_room_path") == ROOM_04, "morte antes da troca: a transição foi cancelada, continua na Sala 04")
 	obs = await _confirm_and_watch()
+	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_01
+		and (_game.call("get_defeated_enemies", ROOM_04) as Array).is_empty() and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID],
+		"reinício (sala da morte = Sala 04, a de origem): registro da Sala 04 limpo; o da Sala 02 preservado")
+	await _go(ROOM_04, &"west")
 	burrower = (_game.call("get_room") as Room).get_node_or_null(BURROWER_NODE) as Enemy
-	_check(obs.restarted == 1 and _game.call("get_room_path") == ROOM_04 and burrower != null
-		and _game.call("get_defeated_enemies", ROOM_02) == [FRAGMENT_ID],
-		"reinício na Sala 04 (sala de origem): o Escavador volta; o Fragmento da Sala 02 continua derrotado")
+	_check(burrower != null, "de volta à Sala 04: o Escavador voltou")
 	# Reinício completo do jogo (Game nova): tudo volta.
 	await _new_game()
 	_check((_game.call("get_defeated_enemies", ROOM_02) as Array).is_empty() and (_game.call("get_defeated_enemies", ROOM_04) as Array).is_empty()
@@ -422,7 +446,8 @@ func _wait_game_over() -> void:
 
 func _test_permanent_and_enemy_during_fade() -> void:
 	print("-- Derrotas permanent e inimigo derrotado durante o clarear")
-	await _new_game()
+	# Sala de teste como sala inicial: o reinício renasce nela (sala da morte = de renascimento).
+	await _new_game(SCOPE_ROOM, &"west")
 	_check(_game.call("load_room", SCOPE_ROOM, &"west"), "sala de teste com um Fragmento permanent")
 	await physics_frame
 	_kill_by_id(FRAGMENT_ID)
@@ -472,11 +497,15 @@ func _test_game_removed() -> void:
 
 # --- Auxiliares -----------------------------------------------------------------------------
 
-func _new_game() -> void:
+## start_room / start_entrance: configuração inicial da Game (vazio = a padrão, Sala 01 / start).
+func _new_game(start_room: String = "", start_entrance: StringName = &"") -> void:
 	if _game != null and is_instance_valid(_game):
 		_game.queue_free()
 		await process_frame
 	_game = (load(GAME_PATH) as PackedScene).instantiate() as Node2D
+	if not start_room.is_empty():
+		_game.set("start_room", start_room)
+		_game.set("start_entrance", start_entrance)
 	root.add_child(_game)
 	await physics_frame
 	await process_frame

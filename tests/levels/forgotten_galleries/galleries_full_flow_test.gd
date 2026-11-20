@@ -15,7 +15,11 @@ extends SceneTree
 ##   quando chega perto; contra o Escavador, a Terra sobe no pilar oeste, a investida para na face
 ##   do pilar (STUNNED), a Terra desce por trás e golpeia durante o atordoamento, e repete.
 ## - Morte na Sala 05 pela API pública de dano do HealthComponent (a sala não tem inimigos); o
-##   "Tentar novamente" é confirmado com a ação jump, como o jogador.
+##   "Tentar novamente" é confirmado com a ação jump, como o jogador. Sem checkpoint, a Terra
+##   renasce na Sala 01, entrada start (Etapa 8.3).
+## - Fase G (retorno 05 → 01), cenário independente: como o renascimento leva à Sala 01, a fase
+##   começa com uma única preparação explícita, load_room(Sala 05, west) — a única exceção à regra
+##   "sem load_room" —, e depois faz o percurso de volta inteiro andando, como antes.
 ## Um monitor por quadro (process_frame) confere a câmera (dentro dos limites e acompanhando a
 ## Terra), nenhum Game Over indevido e a instância única da Terra durante todo o fluxo.
 ##
@@ -52,8 +56,8 @@ const R3_PATH: Array = [
 const PILLAR_WEST: Rect2 = Rect2(288, 288, 32, 32)
 const PILLAR_TOP_Y: float = 288.0
 const ARENA_FLOOR_Y: float = 320.0
-## Sala 05: onde a Terra para encostada no portão.
-const GATE_STOP: Vector2 = Vector2(536, 304)
+## Sala 05: onde a Terra para encostada no portão (sobre a soleira, na face do pilar da arte).
+const GATE_STOP: Vector2 = Vector2(544, 308)
 
 var _failures: int = 0
 var _checks: int = 0
@@ -245,9 +249,11 @@ func _phase_f_death_and_retry() -> void:
 	_game_over_allowed = false
 	_check(restarted[0] == 1 and _game.call("get_attempt") == attempt_before + 1 and presses >= 2,
 		"retry pelo fluxo real: um único reinício (%d confirmação(ões) apertadas)" % presses)
-	_check(_game.call("get_room_path") == ROOM_05 and restart_pos[0].distance_to(Vector2(56, 320)) < 0.6
-		and _terra.global_position.distance_to(Vector2(56, 320)) < 0.6 and _terra.is_on_floor(),
-		"renasce na Sala 05, na entrada west, de pé (%s no reinício; %s depois)" % [restart_pos[0], _terra.global_position])
+	# Etapa 8.3: sem checkpoint, renasce na sala e entrada iniciais (Sala 01, start), não na sala da morte.
+	var start: Vector2 = _room().get_entrance(&"start").global_position if _room().has_entrance(&"start") else Vector2.INF
+	_check(_game.call("get_room_path") == ROOM_01 and restart_pos[0].distance_to(start) < 0.6
+		and _terra.global_position.distance_to(start) < 0.6 and _terra.is_on_floor(),
+		"morte na Sala 05 sem checkpoint: renasce na Sala 01, entrada start, de pé (%s no reinício; %s depois)" % [restart_pos[0], _terra.global_position])
 	_check(_terra.get_health().current_health == _terra.get_health().max_health and not _terra.is_dead(), "vida restaurada")
 	_check(_terra.get_hurtbox().is_invulnerable() and not paused and not go.is_open(), "invulnerabilidade temporária; mundo rodando; Game Over fechado")
 	_check(_count_games() == 1 and _count_terras() == 1 and _terra.get_instance_id() == _terra_id, "sem duplicação de Game nem de Terra; mesma instância")
@@ -256,7 +262,13 @@ func _phase_f_death_and_retry() -> void:
 
 
 func _phase_g_return() -> void:
-	print("-- Fase G: retorno")
+	print("-- Fase G: retorno (cenário independente a partir da Sala 05)")
+	# Preparação (única exceção ao "sem load_room"): depois do renascimento na Sala 01, volta à
+	# entrada west da Sala 05 para refazer o retorno inteiro andando.
+	var before: int = _changes.size()
+	_check(_game.call("load_room", ROOM_05, &"west") and _changes.size() == before + 1
+		and _terra.global_position.distance_to(Vector2(56, 320)) < 0.6, "preparação: Sala 05, entrada west")
+	await _wait(5)
 	var to_04: bool = await _walk_to_next_room(-1.0, ROOM_04, 600)
 	_check(to_04 and _terra.global_position.distance_to(Vector2(840, 320)) < 0.6, "Sala 05 → 04, chegada pela entrada east")
 	await _no_auto_exit()
@@ -297,11 +309,12 @@ func _phase_g_return() -> void:
 
 func _final_checks() -> void:
 	print("-- Verificações do fluxo inteiro")
-	var expected: Array[String] = [ROOM_02, ROOM_03, ROOM_04, ROOM_05, ROOM_05, ROOM_04, ROOM_03, ROOM_02, ROOM_01]
+	# Reinício na Sala 01 (Etapa 8.3) e a preparação da fase G (Sala 05).
+	var expected: Array[String] = [ROOM_02, ROOM_03, ROOM_04, ROOM_05, ROOM_01, ROOM_05, ROOM_04, ROOM_03, ROOM_02, ROOM_01]
 	var names: Array[String] = []
 	for p: String in _changes:
 		names.append(p.get_file().get_basename())
-	_check(_changes == expected, "trocas de sala na ordem esperada, nenhuma duplicada (8 portas + 1 reinício): %s" % [names])
+	_check(_changes == expected, "trocas de sala na ordem esperada, nenhuma duplicada (8 portas + 1 reinício + 1 preparação): %s" % [names])
 	_check(_dirty_swaps.is_empty(), "em toda troca: golpe parado, hitbox desligada, nenhum efeito lançado, sala anterior liberada %s" % [_dirty_swaps])
 	_check((_monitor.camera_out as Array).is_empty(), "câmera nunca mostrou fora dos limites da sala (%d quadros) %s" % [_monitor.frames, (_monitor.camera_out as Array).slice(0, 3)])
 	_check((_monitor.camera_lag as Array).is_empty(), "câmera acompanhou a Terra em todos os quadros fora de transição e pausa %s" % [(_monitor.camera_lag as Array).slice(0, 3)])
@@ -309,8 +322,8 @@ func _final_checks() -> void:
 	var alive: int = 0
 	for ref: WeakRef in _old_rooms:
 		alive += 1 if ref.get_ref() != null else 0
-	_check(_old_rooms.size() == 8 and alive == 0 and _current_room.get_ref() == _room(),
-		"as 8 salas substituídas foram liberadas (%d ainda existem); só a atual continua" % alive)
+	_check(_old_rooms.size() == 9 and alive == 0 and _current_room.get_ref() == _room(),
+		"as 9 salas substituídas foram liberadas (%d ainda existem); só a atual continua" % alive)
 	_check(_game.call("get_attempt") == 2 and not _game.call("is_game_over"), "uma única morte no fluxo (tentativa 2), sem Game Over pendente")
 
 
