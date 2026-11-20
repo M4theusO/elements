@@ -16,6 +16,11 @@ extends Node2D
 ## clarear, Terra e inimigos voltam juntos (e a invulnerabilidade de renascimento começa a contar).
 ## Transições: a Hurtbox da Terra fica bloqueada do pedido até a volta do controle (ver
 ## request_transition() e _run_transition()).
+## Checkpoints (Altares Elementais): a Game guarda, só em memória e só por identificadores
+## (caminho da sala + checkpoint_id), os altares já ativados e o checkpoint de renascimento atual
+## (um só). Ao carregar uma sala, devolve o estado a cada altar (ElementalAltar.apply_state()).
+## Ativar um altar não começa tentativa nem mexe nos inimigos. O renascimento ainda não usa os
+## checkpoints (Etapa 8.3).
 
 signal room_changed(room: Room)
 ## Reinício concluído: Terra viva, no controle, mundo rodando e tela clara.
@@ -45,6 +50,12 @@ var _paused_world: bool = false
 var _entrance_id: StringName = &""
 ## Verdadeiro do "Tentar novamente" aceito até o fim do reinício.
 var _retrying: bool = false
+## Altares já ativados: { caminho da sala: { checkpoint_id: true } }. Só identificadores (nada
+## de referências a nós das salas, que são liberadas); some com a Game (sem save).
+var _activated_checkpoints: Dictionary[String, Dictionary] = {}
+## Checkpoint de renascimento atual ("" / &"" = nenhum).
+var _checkpoint_room: String = ""
+var _checkpoint_id: StringName = &""
 
 @onready var _room_slot: Node2D = $RoomSlot
 @onready var _terra: PlayerCharacter = $Terra
@@ -155,6 +166,74 @@ func start_new_attempt(only_room: String = "") -> int:
 	return removed
 
 
+## Sala inicial do jogo (configuração start_room), independente da sala atual.
+func get_start_room() -> String:
+	return start_room
+
+
+## Entrada inicial do jogo (configuração start_entrance).
+func get_start_entrance() -> StringName:
+	return start_entrance
+
+
+## Ativa o altar checkpoint_id da sala carregada e o torna o checkpoint atual (o anterior
+## continua ativado). Só vale para a sala atual (room_path == get_room_path()) e para um altar
+## válido dela (Room.get_checkpoints(): ID não vazio e não repetido); assim nenhuma sala é
+## carregada só para validar. Recusada (false, sem mudar nada) com a Terra morta, no Game Over,
+## no reinício e durante uma transição. Repetir a ativação não duplica o registro. Não começa
+## tentativa nem mexe nos inimigos ou na vida. Retorna se a ativação foi aceita.
+func activate_checkpoint(room_path: String, checkpoint_id: StringName) -> bool:
+	if checkpoint_id.is_empty():
+		push_error("Game: checkpoint_id vazio.")
+		return false
+	if _room == null or room_path.is_empty() or room_path != _room_path:
+		push_error("Game: checkpoint '%s' fora da sala carregada ('%s')." % [checkpoint_id, room_path])
+		return false
+	if not _room.get_checkpoints().has(checkpoint_id):
+		push_error("Game: a sala '%s' não tem o checkpoint válido '%s'." % [room_path, checkpoint_id])
+		return false
+	if _transitioning or _retrying or _game_over.is_open() or _terra.is_dead():
+		return false
+	if not _activated_checkpoints.has(room_path):
+		_activated_checkpoints[room_path] = {}
+	_activated_checkpoints[room_path][checkpoint_id] = true
+	_checkpoint_room = room_path
+	_checkpoint_id = checkpoint_id
+	_apply_checkpoint_states(_room, room_path)
+	return true
+
+
+func has_current_checkpoint() -> bool:
+	return not _checkpoint_id.is_empty()
+
+
+## Sala do checkpoint atual ("" sem checkpoint).
+func get_current_checkpoint_room() -> String:
+	return _checkpoint_room
+
+
+## checkpoint_id do checkpoint atual (&"" sem checkpoint).
+func get_current_checkpoint_id() -> StringName:
+	return _checkpoint_id
+
+
+func is_checkpoint_activated(room_path: String, checkpoint_id: StringName) -> bool:
+	return _activated_checkpoints.has(room_path) and _activated_checkpoints[room_path].has(checkpoint_id)
+
+
+func is_current_checkpoint(room_path: String, checkpoint_id: StringName) -> bool:
+	return has_current_checkpoint() and room_path == _checkpoint_room and checkpoint_id == _checkpoint_id
+
+
+## Altares ativados da sala (cópia, em ordem de ativação).
+func get_activated_checkpoints(room_path: String) -> Array[StringName]:
+	var result: Array[StringName] = []
+	if _activated_checkpoints.has(room_path):
+		for id: StringName in _activated_checkpoints[room_path]:
+			result.append(id)
+	return result
+
+
 ## Carrega a sala na hora (sem fade), põe a Terra parada na entrada e aplica os limites da
 ## câmera. Em caso de erro (cena inválida ou entrada inexistente) mantém o estado e retorna false.
 func load_room(room_path: String, entrance_id: StringName) -> bool:
@@ -248,6 +327,7 @@ func _swap_room(room: Room, room_path: String, entrance_id: StringName) -> void:
 	_room_path = room_path
 	_entrance_id = entrance_id
 	_apply_enemy_persistence(room, room_path)
+	_connect_checkpoints(room, room_path)
 	_room_slot.add_child(room)
 	for room_exit: RoomExit in room.get_exits():
 		room_exit.transition_requested.connect(request_transition)
@@ -287,6 +367,29 @@ func _on_persistent_enemy_died(room_path: String, enemy_id: StringName, scope: S
 	if not _defeated_enemies.has(room_path):
 		_defeated_enemies[room_path] = {}
 	_defeated_enemies[room_path][enemy_id] = scope
+
+
+## Antes de a sala entrar na árvore: devolve a cada altar válido o estado do registro e liga o
+## pedido de ativação (com o caminho da sala). Altares com ID vazio ou repetido não são ligados.
+## As ligações morrem com a sala (sem sinais acumulados entre visitas).
+func _connect_checkpoints(room: Room, room_path: String) -> void:
+	for altar: ElementalAltar in room.get_checkpoints().values():
+		altar.activated.connect(_on_altar_activated.bind(room_path))
+	_apply_checkpoint_states(room, room_path)
+
+
+## Estado de cada altar válido da sala a partir do registro (sem emitir activated).
+func _apply_checkpoint_states(room: Room, room_path: String) -> void:
+	var altars: Dictionary[StringName, ElementalAltar] = room.get_checkpoints()
+	for id: StringName in altars:
+		altars[id].apply_state(is_checkpoint_activated(room_path, id), is_current_checkpoint(room_path, id))
+
+
+## Só o altar da sala carregada conta (um altar de uma sala já substituída é ignorado).
+func _on_altar_activated(altar: ElementalAltar, _first_time: bool, room_path: String) -> void:
+	if _room == null or altar.get_room() != _room:
+		return
+	activate_checkpoint(room_path, altar.checkpoint_id)
 
 
 ## Fim da animação de morte da Terra (emitido uma vez por morte): pausa o mundo e abre a tela.

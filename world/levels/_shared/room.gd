@@ -4,8 +4,9 @@ extends Node2D
 ## personagem numa entrada e aplica os limites da câmera.
 ##
 ## Estrutura esperada (nem todos precisam ter filhos):
-##   Background (fundo com parallax), Terrain (TileMapLayer), Props, Enemies,
-##   Entrances (Marker2D, um por entrada; o nome é o identificador), Exits (RoomExit).
+##   Background (fundo com parallax), Terrain (TileMapLayer), Props, Checkpoints (opcional,
+##   ElementalAltar), Enemies, Entrances (Marker2D, um por entrada; o nome é o identificador),
+##   Exits (RoomExit).
 ## As entradas marcam a posição dos pés da Terra.
 
 ## Metadata da instância do inimigo com o identificador persistente (ver get_persistent_enemies()).
@@ -100,6 +101,45 @@ func get_enemy_persistence_scope(enemy: Node) -> StringName:
 			return scope
 	push_error("Room '%s': inimigo '%s' com escopo de persistência inválido (%s); usando '%s'." % [name, enemy.name, var_to_str(value), SCOPE_ATTEMPT])
 	return SCOPE_ATTEMPT
+
+
+## Altares (filhos diretos de Checkpoints que são ElementalAltar), por checkpoint_id. Mesma
+## regra dos inimigos persistentes: ID vazio ou repetido fica de fora (todos os que repetem),
+## com erro no console; esses altares continuam na sala, mas nunca são registrados.
+func get_checkpoints() -> Dictionary[StringName, ElementalAltar]:
+	var result: Dictionary[StringName, ElementalAltar] = {}
+	var duplicated: Dictionary[StringName, bool] = {}
+	var checkpoints: Node = get_node_or_null(^"Checkpoints")
+	if checkpoints == null:
+		return result
+	for child: Node in checkpoints.get_children():
+		if not child is ElementalAltar:
+			continue
+		var altar: ElementalAltar = child as ElementalAltar
+		var id: StringName = altar.checkpoint_id
+		if id.is_empty():
+			push_error("Room '%s': altar '%s' sem checkpoint_id; não será registrado." % [name, altar.name])
+			continue
+		if result.has(id) or duplicated.has(id):
+			push_error("Room '%s': checkpoint_id '%s' repetido (altar '%s'); nenhum altar com ele será registrado." % [name, id, altar.name])
+			result.erase(id)
+			duplicated[id] = true
+			continue
+		result[id] = altar
+	return result
+
+
+## Verdadeiro se houver um altar válido (ID não vazio e não repetido) com esse checkpoint_id.
+func has_checkpoint(id: StringName) -> bool:
+	return not id.is_empty() and get_checkpoints().has(id)
+
+
+## Retorna o altar válido com esse checkpoint_id, ou null (com erro no console).
+func get_checkpoint(id: StringName) -> ElementalAltar:
+	var altar: ElementalAltar = get_checkpoints().get(id)
+	if altar == null:
+		push_error("Room '%s': checkpoint '%s' não encontrado." % [name, id])
+	return altar
 
 
 func _find_entrance(id: StringName) -> Marker2D:
