@@ -11,6 +11,9 @@ extends SceneTree
 const TERRA_PATH: String = "res://entities/characters/terra/terra.tscn"
 const HUD_PATH: String = "res://ui/hud/player_hud.tscn"
 const GAME_OVER_PATH: String = "res://ui/menus/game_over_screen.tscn"
+const HEARTS_ATLAS: String = "res://ui/hud/hearts.png"
+## Paleta aprovada dos corações: contorno, três vermelhos e brilho; pedra escura no vazio.
+const HEART_PALETTE: Array[String] = ["#130f12", "#6e1c22", "#c0392f", "#ef6a50", "#ffd9c7", "#2a2628", "#47403d"]
 
 var _failures: int = 0
 var _checks: int = 0
@@ -26,6 +29,7 @@ func _run() -> void:
 	await _test_hud_with_terra()
 	await _test_hud_sources()
 	_test_hearts_display()
+	_test_hud_heart_art()
 	await _test_game_over()
 	_finish()
 
@@ -44,7 +48,10 @@ func _test_hud_with_terra() -> void:
 	_check(terra.is_in_group(&"player"), "Terra está no grupo player")
 	_check(hud.get_bound_health() == terra.get_health(), "HUD encontrou a vida da Terra pelo grupo (sem export)")
 	_check(hearts.get_maximum() == 5 and hearts.get_full_count() == 5 and hearts.get_empty_count() == 0, "começa com 5 corações cheios")
-	_check(hud is CanvasLayer and hud.layer > 0 and hearts.position == Vector2(8, 8), "HUD em CanvasLayer (fixa na tela), corações a 8 px do canto superior esquerdo")
+	# O desenho do coração tem 2 px de margem transparente na célula de 16x16 (arte definitiva):
+	# o nó fica em (6, 6) para o desenho começar a 8 px do canto.
+	_check(hud is CanvasLayer and hud.layer > 0 and hearts.position + Vector2(2, 2) == Vector2(8, 8),
+		"HUD em CanvasLayer (fixa na tela), desenho dos corações a 8 px do canto superior esquerdo")
 	var hb := terra.get_hurtbox()
 	hb.receive_hit(1)
 	_check(hearts.get_full_count() == 4 and hearts.get_empty_count() == 1, "dano 1: 4 cheios e 1 vazio, na hora (sem esperar quadro)")
@@ -107,6 +114,61 @@ func _test_hearts_display() -> void:
 	hd.empty_texture = ImageTexture.create_from_image(img)
 	_check(hd.get_heart_size() == Vector2i(16, 16) and hd.size == Vector2(5 * 16 + 4 * 2, 16), "com texturas, usa o tamanho delas (preparado para os sprites)")
 	hd.queue_free()
+
+
+## Arte definitiva dos corações (atlas ui/hud/hearts.png, 32x16: cheio em x 0–15, vazio em 16–31).
+func _test_hud_heart_art() -> void:
+	print("-- Corações da HUD com a arte definitiva")
+	var hud := (load(HUD_PATH) as PackedScene).instantiate() as PlayerHud
+	var hd: HeartsDisplay = hud.get_node("Root/Hearts") as HeartsDisplay
+	var full: AtlasTexture = hd.full_texture as AtlasTexture
+	var empty: AtlasTexture = hd.empty_texture as AtlasTexture
+	_check(full != null and empty != null and full.atlas != null and full.atlas == empty.atlas
+		and full.atlas.resource_path == HEARTS_ATLAS and full.region == Rect2(0, 0, 16, 16) and empty.region == Rect2(16, 0, 16, 16),
+		"a HUD usa o atlas hearts.png: cheio em (0, 0) e vazio em (16, 0), 16x16 cada")
+	if full == null or empty == null or full.atlas == null:
+		hud.free()
+		return
+	var atlas: Image = full.atlas.get_image()
+	_check(atlas.get_size() == Vector2i(32, 16), "atlas de 32x16")
+	var palette: Dictionary = {}
+	for hex: String in HEART_PALETTE:
+		palette[Color(hex).to_html(false)] = true
+	var off: int = 0
+	var partial: int = 0
+	var same_shape: bool = true
+	var reds: int = 0
+	var empty_reds: int = 0
+	var min_pos: Vector2i = Vector2i(99, 99)
+	for y: int in 16:
+		for x: int in 32:
+			var c: Color = atlas.get_pixel(x, y)
+			if c.a > 0.0 and c.a < 1.0:
+				partial += 1
+			if c.a == 0.0:
+				continue
+			if not palette.has(c.to_html(false)):
+				off += 1
+			var is_red: bool = c.to_html(false) in ["6e1c22", "c0392f", "ef6a50", "ffd9c7"]
+			if x < 16:
+				reds += 1 if is_red else 0
+				min_pos = Vector2i(mini(min_pos.x, x), mini(min_pos.y, y))
+			else:
+				empty_reds += 1 if is_red else 0
+		for x: int in 16:
+			same_shape = same_shape and (atlas.get_pixel(x, y).a > 0.0) == (atlas.get_pixel(x + 16, y).a > 0.0)
+	_check(off == 0 and partial == 0, "pixels só das 7 cores aprovadas, alfa 0 ou 1")
+	_check(same_shape, "cheio e vazio com a mesma silhueta, na mesma posição da célula")
+	_check(reds > 60 and empty_reds == 0, "cheio vermelho (%d pixels); vazio sem vermelho" % reds)
+	root.add_child(hud)
+	hd.set_values(3, 5)
+	var drawn_left: float = hd.position.x + min_pos.x
+	var drawn_top: float = hd.position.y + min_pos.y
+	_check(hd.get_heart_size() == Vector2i(16, 16) and is_equal_approx(drawn_left, 8.0) and is_equal_approx(drawn_top, 8.0),
+		"o desenho do primeiro coração começa a 8 px do canto superior esquerdo (%.0f, %.0f)" % [drawn_left, drawn_top])
+	_check(hd.get_full_count() == 3 and hd.get_empty_count() == 2 and hd.size == Vector2(5 * 16 + 4 * hd.spacing, 16),
+		"3 cheios e 2 vazios, fileira de %s px" % hd.size)
+	hud.queue_free()
 
 
 func _test_game_over() -> void:
